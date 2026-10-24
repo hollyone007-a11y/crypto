@@ -50,7 +50,9 @@ def review_rules(s, now_ms, limit=50):
 def research(s, evaluate, symbols, now_ms):
     lessons = review_rules(s, now_ms)
     previous = s.get(AgentState, 'research_last_run')
-    if previous and now_ms-int(previous.value) < SIX_HOURS:
+    previous_symbols=s.get(AgentState,'research_symbols')
+    same_universe=previous_symbols is not None and set(json.loads(previous_symbols.value))==set(symbols)
+    if previous and same_universe and now_ms-int(previous.value) < SIX_HOURS:
         return {'status':'not_due','lessons':lessons}
     fresh = s.scalar(select(func.max(Ohlcv.ts)).where(Ohlcv.timeframe=='1h', Ohlcv.symbol.in_(symbols)))
     if not fresh or now_ms-fresh > 7_200_000:
@@ -108,5 +110,7 @@ def research(s, evaluate, symbols, now_ms):
     result={'status':'исследование завершено','finished_ts':now_ms,'proposed':proposed,'lessons':lessons,
             'summary':f'Разборов: {lessons}; новых гипотез: {proposed}. '+(' '.join(decisions) if decisions else 'Новых доказательств для смены правил нет.')}
     set_state(s,'research_last_run',str(now_ms))
+    set_state(s,'research_symbols',json.dumps(sorted(symbols)))
     set_state(s,'research_status',json.dumps(result,ensure_ascii=False))
     return result
+

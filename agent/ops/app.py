@@ -268,7 +268,8 @@ class App:
             return review_pending(s, LLM(s, self.llm_client))
 
     def _evaluator(self, s):
-        return lambda v, start: evaluate_version(s, self.settings.database_url, v, self.symbols, start)
+        symbols=list(self.symbols)
+        return lambda v, start: evaluate_version(s, self.settings.database_url, v, symbols, start)
 
     def advance_candidates(self) -> list[str]:
         with self.Session() as s:
@@ -383,4 +384,5 @@ class App:
         self.market_ready=True
         self.research_cycle()
         self.analyst_cycle()
+
 

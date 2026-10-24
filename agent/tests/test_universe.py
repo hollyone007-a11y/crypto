@@ -5,10 +5,12 @@ from learning.walkforward import walk_forward
 from strategies.baseline import EmaAdxTrend
 from tests.fakes import synthetic_market
 from sqlalchemy import select
-from db.models import StrategyVersion
+from db.models import Ohlcv, StrategyVersion
 from tests.test_ops import app,open_long
 from tests.test_binance_paper import rules_app,candidate
 from analyst import rules
+from learning.autonomous import research
+from tests.test_learning import stats
 
 NOW=1_792_454_400_000
 
@@ -78,3 +80,23 @@ def test_profitable_pool_does_not_certify_losing_coin(rules_app,monkeypatch):
         s.commit()
     result=rules_app.analyst_cycle()
     assert not result['submitted'] and result['opportunities'][0]['status']=='отклонён'
+
+
+def test_research_evaluator_uses_fixed_symbol_snapshot(app,monkeypatch):
+    monkeypatch.setattr('ops.app.evaluate_version',lambda s,url,v,symbols,start:list(symbols))
+    original=list(app.symbols)
+    evaluate=app._evaluator(None)
+    app.symbols=['SOLUSDT']
+    assert evaluate(None,None)==original
+
+
+def test_changed_universe_is_not_blocked_by_previous_research_timer(session):
+    for symbol in ['BTCUSDT','ETHUSDT']:
+        session.add(Ohlcv(exchange='binanceusdm',symbol=symbol,timeframe='1h',ts=NOW-3600000,
+                          open=100,high=101,low=99,close=100,volume=1))
+    session.commit()
+    ev=lambda v,start:stats(.5)
+    assert research(session,ev,['BTCUSDT'],NOW)['status']!='not_due'
+    assert research(session,ev,['BTCUSDT'],NOW+1)['status']=='not_due'
+    assert research(session,ev,['ETHUSDT'],NOW+2)['status']!='not_due'
+
