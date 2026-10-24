@@ -1,0 +1,8 @@
+# News / macro sources. Reuters dropped public RSS in 2020, so crypto + markets
+# feeds that still publish RSS are used instead.
+rss:
+  coindesk: https://www.coindesk.com/arc/outboundfeeds/rss/
+  cointelegraph: https://cointelegraph.com/rss
+  cnbc_markets: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258
+fear_greed: https://api.alternative.me/fng/
+economic_calendar: https://nfs.faireconomy.media/ff_calendar_thisweek.json

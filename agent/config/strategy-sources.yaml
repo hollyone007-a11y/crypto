@@ -1,0 +1,22 @@
+strategies:
+  trend_donchian:
+    title: Donchian / Turtle-inspired adaptation
+    timeframe: 4h
+    explanation: 55-bar breakout plus EMA200; ATR stop and target. This is not the original daily Turtle system.
+    reference: https://oxfordstrat.com/coasdfASD32/uploads/2016/01/turtle-rules.pdf
+  ema_adx:
+    title: EMA + ADX trend filter
+    timeframe: 1h
+    explanation: EMA20/50 cross, EMA200 direction, ADX above 25, ATR exits. Original research implementation; no private trader signals.
+  meanrev_z:
+    title: Range mean reversion
+    timeframe: 1h
+    explanation: Z-score, RSI and regime filter. Experimental baseline, not a claimed top trader system.
+  funding_fade:
+    title: Extreme funding research
+    timeframe: 1h
+    explanation: Contrarian extreme-funding hypothesis with ATR exits. Requires enough historical settlements.
+notes:
+  - No trader performance rankings or proprietary TradingView scripts are reproduced.
+  - Data used for automated decisions comes from Binance public APIs.
+  - TradingView links are for manual viewing only; no scraping or alert ingestion is enabled.

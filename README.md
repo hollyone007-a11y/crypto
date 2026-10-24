@@ -46,4 +46,3 @@ For private snapshot publishing, configure `CLOUD_DASHBOARD_URL` and the owner-p
 ```
 
 The public site can be previewed with `python -m http.server 8080 --directory docs`. Market requests may be unavailable in jurisdictions where Binance restricts access; the UI shows an error instead of invented prices.
-

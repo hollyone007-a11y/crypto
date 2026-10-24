@@ -1,0 +1,8 @@
+# HARD risk limits. Read-only for the agent: loaded once into a frozen object,
+# never written by code. Change only by hand.
+max_risk_per_trade_pct: 0.5      # % of equity lost if stop is hit
+max_leverage: 3.0
+max_open_positions: 3
+daily_loss_limit_pct: 2.0        # -2% for the UTC day -> no new trades until next day
+max_drawdown_pct: 10.0           # -10% from equity peak -> full halt + alert
+require_stop_loss: true

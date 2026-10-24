@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import worker from '../worker/index.js';
+let value=null;const env={BUCKET:{get:async()=>value?{json:async()=>JSON.parse(value)}:null,put:async(k,v)=>{value=v}}};
+const send=(method,path,body,headers={})=>worker.fetch(new Request('https://test.example'+path,{method,headers,body:body?JSON.stringify(body):undefined}),env);
+assert.equal((await send('GET','/')).status,200);
+assert.equal((await send('POST','/api/snapshot',{mode:'live'})).status,400);
+const body={mode:'paper',html:'<!doctype html><html>PAPER</html>',generated_ts:Date.now(),heartbeat_ts:Date.now()};
+assert.equal((await send('POST','/api/snapshot',body,{'Origin':'https://evil.example'})).status,403);
+assert.equal((await send('POST','/api/snapshot',body)).status,200);
+assert.equal(await (await send('GET','/')).text(),body.html);
+assert.equal((await (await send('GET','/health')).json()).stale,false);
+assert.equal((await send('POST','/api/snapshot',{...body,generated_ts:body.generated_ts-1})).status,409);
+assert.equal((await send('GET','/private-path')).status,404);
+console.log('8 Worker behavior checks passed');
