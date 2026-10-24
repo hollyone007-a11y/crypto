@@ -20,10 +20,15 @@ export default {async fetch(request,env){
   return json({ok:true,generated_ts:body.generated_ts});
  }
  if(request.method!=="GET")return json({error:"Method not allowed"},405);
- if(!["/","/index.html","/health"].includes(url.pathname))return json({error:"Not found"},404);
+ if(!["/","/index.html","/health","/api/live","/research-report.txt"].includes(url.pathname))return json({error:"Not found"},404);
  const object=await env.BUCKET.get("latest.json");
  if(!object)return new Response('<!doctype html><html lang="ru"><meta charset="utf-8"><meta http-equiv="refresh" content="20"><title>Futures Agent</title><body style="background:#101214;color:#e8ecef;font:16px system-ui;padding:40px"><h1>Futures Agent · PAPER</h1><p>Хостинг готов. Ожидается первая синхронизация с ноутбуком.</p><p>Реальные средства не подключены.</p></body></html>',{headers:{...headers,"Content-Type":"text/html; charset=utf-8"}});
  const snapshot=await object.json();
+ if(url.pathname==='/api/live'){
+  if(Number(url.searchParams.get('since')||0)>=snapshot.generated_ts)return new Response(null,{status:204,headers});
+  return json(snapshot);
+ }
+ if(url.pathname==='/research-report.txt')return new Response(snapshot.report_text||'Отчёт ещё не сформирован.',{headers:{...headers,'Content-Type':'text/plain; charset=utf-8','Content-Disposition':'attachment; filename="research-report.txt"'}});
  if(url.pathname==="/health")return json({mode:"paper",generated_ts:snapshot.generated_ts,heartbeat_ts:snapshot.heartbeat_ts,stale:Date.now()-snapshot.heartbeat_ts>180000});
  return new Response(snapshot.html,{headers:{...headers,"Content-Type":"text/html; charset=utf-8"}});
 }};

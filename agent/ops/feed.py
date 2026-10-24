@@ -21,6 +21,7 @@ class LiveFeed:
         self.clock = clock
         self.book: dict[str, tuple[float, float, float, float]] = {}  # bid, ask, last, at
         self.bars: dict[str, list] = {}  # last few CLOSED 1m bars
+        self.bar_minute: dict[str, int] = {}
 
     def refresh(self) -> None:
         now = self.clock()
@@ -31,14 +32,20 @@ class LiveFeed:
         for sym, mkt in markets.items():
             try:
                 t = batch.get(mkt,{}) if batch is not None else self.ex.fetch_ticker(mkt)
+                timestamp=t.get('timestamp')
+                if timestamp is not None and (now*1000-float(timestamp)>30000 or float(timestamp)>now*1000+30000):
+                    raise StaleQuote(f'stale exchange timestamp for {sym}')
                 bid,ask=float(t.get('bid') or 0),float(t.get('ask') or 0)
                 last=float(t.get('last') or (bid+ask)/2)
                 if not all(math.isfinite(v) and v>0 for v in (bid,ask,last)) or ask<bid:
                     raise StaleQuote(f'invalid quote for {sym}')
                 self.book[sym]=(bid,ask,last,now)
                 refreshed+=1
-                bars=self.ex.fetch_ohlcv(mkt,'1m',limit=4)
-                self.bars[sym]=[b for b in bars if b[0]+60_000<=now*1000]
+                minute=int(now//60)
+                if self.bar_minute.get(sym)!=minute:
+                    bars=self.ex.fetch_ohlcv(mkt,'1m',limit=4)
+                    self.bars[sym]=[b for b in bars if b[0]+60_000<=now*1000]
+                    self.bar_minute[sym]=minute
             except Exception:
                 self.bars[sym]=[]
                 log.warning('Public feed failed for %s; no quote fabricated',sym)

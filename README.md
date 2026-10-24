@@ -11,7 +11,7 @@ Public Binance market screening and a local **paper-only** futures research agen
 
 The public website fetches public market data directly from Binance while it is open. It contains no personal trading history or credentials and does not trade. Its availability does not depend on the laptop.
 
-The Python agent runs on the laptop, starts on Windows sign-in, and sends snapshots to the private hosted dashboard every minute. The dashboard retains its last snapshot when the laptop is offline and marks stale data. GitHub Pages is not a Python process host. Running the agent independently of the laptop requires a separate server.
+The Python agent runs on the laptop, starts on Windows sign-in, and sends snapshots to the private hosted dashboard approximately every 15 seconds. The dashboard retains its last snapshot when the laptop is offline and marks stale data. GitHub Pages is not a Python process host. Running the agent independently of the laptop requires a separate server.
 
 ## Universe and decisions
 
@@ -46,3 +46,11 @@ For private snapshot publishing, configure `CLOUD_DASHBOARD_URL` and the owner-p
 ```
 
 The public site can be previewed with `python -m http.server 8080 --directory docs`. Market requests may be unavailable in jurisdictions where Binance restricts access; the UI shows an error instead of invented prices.
+
+## Live updates and research reports
+
+Price display uses Binance mark-price WebSocket updates at one-second cadence; these are estimates, not confirmed order fills. The paper engine checks bid/ask on a five-second schedule; minute candles are cached until the minute changes. The private site polls snapshots without navigation, preserving the selected tab and unchanged research content. Stale quotes, old agent heartbeat and failed synchronization are labelled separately.
+
+Research records observations, a hypothesis and its reason, paired historical comparisons, provisional replay of newly received candles, and actual promotion/rollback events. Only recorded rule changes count as applied changes. Two predeclared parameter tests and up to two observation-led tests per parent version bound the search; observation-led tests require at least 20 closed trades. Candidate and benchmark use a frozen dataset, cutoff and identical costs. Missing/stale per-coin history and nonfinite benchmark metrics cannot certify improvement.
+
+Human-readable and JSON reports are saved locally under `agent/reports/research/` (ignored by Git). The latest report is downloadable from the private dashboard. A six-hour minimum separates full research runs; the scheduler checks readiness every ten minutes. No neural-network retraining or autonomous real-money execution is implemented.

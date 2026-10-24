@@ -6,7 +6,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 
-def publish(settings, html, heartbeat_ts, generated_ts, client=None):
+def publish(settings, html, heartbeat_ts, generated_ts, client=None, report_text=''):
     url = settings.cloud_dashboard_url.rstrip('/')
     token = settings.cloud_dashboard_token.get_secret_value()
     if not url or not token:
@@ -19,7 +19,7 @@ def publish(settings, html, heartbeat_ts, generated_ts, client=None):
     try:
         response = client.post(url+'/api/snapshot',
             headers={'OAI-Sites-Authorization':'Bearer '+token},
-            json={'mode':'paper','html':html,'heartbeat_ts':heartbeat_ts,'generated_ts':generated_ts})
+            json={'mode':'paper','html':html,'heartbeat_ts':heartbeat_ts,'generated_ts':generated_ts,'report_text':report_text})
         response.raise_for_status()
         return bool(response.json().get('ok'))
     except (httpx.HTTPError, ValueError):

@@ -4,11 +4,14 @@ let value=null;const env={BUCKET:{get:async()=>value?{json:async()=>JSON.parse(v
 const send=(method,path,body,headers={})=>worker.fetch(new Request('https://test.example'+path,{method,headers,body:body?JSON.stringify(body):undefined}),env);
 assert.equal((await send('GET','/')).status,200);
 assert.equal((await send('POST','/api/snapshot',{mode:'live'})).status,400);
-const body={mode:'paper',html:'<!doctype html><html>PAPER</html>',generated_ts:Date.now(),heartbeat_ts:Date.now()};
+const body={mode:'paper',html:'<!doctype html><html>PAPER</html>',generated_ts:Date.now(),heartbeat_ts:Date.now(),report_text:'No applied changes'};
 assert.equal((await send('POST','/api/snapshot',body,{'Origin':'https://evil.example'})).status,403);
 assert.equal((await send('POST','/api/snapshot',body)).status,200);
 assert.equal(await (await send('GET','/')).text(),body.html);
 assert.equal((await (await send('GET','/health')).json()).stale,false);
 assert.equal((await send('POST','/api/snapshot',{...body,generated_ts:body.generated_ts-1})).status,409);
 assert.equal((await send('GET','/private-path')).status,404);
-console.log('8 Worker behavior checks passed');
+assert.equal((await (await send('GET','/api/live')).json()).mode,'paper');
+assert.equal((await send('GET','/api/live?since='+body.generated_ts)).status,204);
+assert.equal(await (await send('GET','/research-report.txt')).text(),'No applied changes');
+console.log('11 Worker behavior checks passed');

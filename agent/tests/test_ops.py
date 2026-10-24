@@ -142,6 +142,10 @@ def test_funding_settled_once_and_only_for_positions_open_at_print(app):
                    FundingRate(exchange="bybit", symbol="BTCUSDT", ts=now + 40_000, rate=0.001)])
         s.commit()
     app.clock.t += 60
+    app.settle_funding()  # old quote is no longer eligible under the 30s freshness rule
+    with app.Session() as s:
+        assert s.get(Position,pid).funding == 0
+    app.feed.refresh()
     app.settle_funding()
     app.settle_funding()                                   # idempotent
     with app.Session() as s:

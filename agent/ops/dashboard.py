@@ -2,6 +2,7 @@
 lessons and news-derived text come from an LLM and must never be trusted as markup."""
 import json
 import threading
+from urllib.parse import urlparse
 from datetime import UTC, datetime
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -118,20 +119,32 @@ def render(s, mode: str, equity: float | None, blockers: list[str], market_sourc
     return render_dashboard(s, mode, equity, blockers, market_source, quotes, limits)
 
 
-def serve(page_fn, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
+def serve(page_fn, host: str = "127.0.0.1", port: int = 8765, snapshot_fn=None) -> ThreadingHTTPServer:
     """page_fn() -> html. Runs in a daemon thread. Bound to localhost only."""
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path not in ("/", "/index.html"):
+            path=urlparse(self.path).path
+            if path not in ("/", "/index.html",'/api/live','/research-report.txt'):
                 self.send_error(404)
                 return
             try:
-                body = page_fn().encode("utf-8")
+                content_type='text/html; charset=utf-8'
+                if path in ('/api/live','/research-report.txt') and snapshot_fn:
+                    snapshot=snapshot_fn()
+                    if path=='/api/live':
+                        body=json.dumps(snapshot,ensure_ascii=False,allow_nan=False).encode('utf-8')
+                        content_type='application/json; charset=utf-8'
+                    else:
+                        body=snapshot['report_text'].encode('utf-8')
+                        content_type='text/plain; charset=utf-8'
+                else:
+                    body = page_fn().encode("utf-8")
                 self.send_response(200)
             except Exception:  # never take the agent down because of a page
                 body = b"dashboard error"
                 self.send_response(500)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type",content_type)
+            self.send_header('Cache-Control','no-store')
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

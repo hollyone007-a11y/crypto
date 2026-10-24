@@ -14,7 +14,7 @@ from sqlalchemy import desc, select
 from analyst.cycle import run_cycle
 from analyst.llm import LLM
 from analyst.rules import run_rules
-from config.settings import Settings, to_ccxt_symbol
+from config.settings import ROOT, Settings, to_ccxt_symbol
 from data.market import MarketCollector, public_exchange
 from data.news import NewsCollector
 from db.models import AgentState, EquitySnapshot, FundingRate, Ohlcv, Position, StrategyVersion
@@ -23,7 +23,7 @@ from execution.engine import ExecutionEngine
 from execution.paper import PaperBroker
 from journal.journal import Journal
 from learning import pipeline
-from learning.evaluate import evaluate_version
+from learning.evaluate import evaluate_version, frozen_evaluator
 from learning.reviewer import review_pending
 from learning.weekly import weekly_review
 from ops import dashboard, reports
@@ -57,7 +57,7 @@ class App:
         self.limits = load_limits(risk_file) if risk_file else load_limits()
         self.exchange = exchange or public_exchange(settings.exchange)
         self.market_exchange = exchange if exchange is not None else public_exchange(settings.exchange)
-        self.feed = LiveFeed(self.exchange, self.symbols, clock=clock)
+        self.feed = LiveFeed(self.exchange, self.symbols, max_age_s=30, clock=clock)
         self.tg = telegram or Telegram(settings.telegram_bot_token.get_secret_value(),
                                        settings.telegram_chat_id)
         self.llm_enabled = bool(settings.anthropic_api_key.get_secret_value()) or llm_client is not None
@@ -269,7 +269,7 @@ class App:
 
     def _evaluator(self, s):
         symbols=list(self.symbols)
-        return lambda v, start: evaluate_version(s, self.settings.database_url, v, symbols, start)
+        return frozen_evaluator(s,symbols,self.now_ms())
 
     def advance_candidates(self) -> list[str]:
         with self.Session() as s:
@@ -331,10 +331,20 @@ class App:
     def publish_dashboard(self) -> bool:
         if not self.settings.cloud_dashboard_url:
             return False
-        html = self.page()
-        with self.Session() as s:
-            heartbeat = int(self._state(s, 'heartbeat', '0'))
-        return publish(self.settings, html, heartbeat, self.now_ms())
+        snapshot=self.live_snapshot()
+        return publish(self.settings,snapshot['html'],snapshot['heartbeat_ts'],snapshot['generated_ts'],
+                       report_text=snapshot['report_text'])
+
+    def live_snapshot(self):
+        from learning.lab import report_text
+        from ops.live_view import state_json
+        with self.lock:
+            html=self.page()
+            with self.Session() as s:
+                heartbeat=int(self._state(s,'heartbeat','0'))
+                report=state_json(s,'research_attempt') or state_json(s,'research_report')
+        return {'mode':'paper','html':html,'heartbeat_ts':heartbeat,'generated_ts':self.now_ms(),
+                'report_text':report_text(report) if report else 'Исследовательский отчёт ещё не сформирован.'}
 
     def research_cycle(self):
         if self.settings.analyst_mode != 'rules':
@@ -346,7 +356,11 @@ class App:
         from learning.autonomous import research
         try:
             with self.Session() as s:
-                return research(s, self._evaluator(s), self.symbols, self.now_ms())
+                with self.lock:
+                    symbols=list(self.symbols); cutoff=self.now_ms()
+                return research(s, frozen_evaluator(s,symbols,cutoff), symbols, cutoff,
+                                clock=self.now_ms, exchange=self.settings.exchange,
+                                report_dir=ROOT/'reports'/'research')
         finally:
             self.research_lock.release()
 
@@ -384,5 +398,4 @@ class App:
         self.market_ready=True
         self.research_cycle()
         self.analyst_cycle()
-
 

@@ -8,6 +8,8 @@ import json
 import os
 import subprocess
 import sys
+import hashlib
+import pandas as pd
 
 from sqlalchemy.orm import Session
 
@@ -26,9 +28,10 @@ def _load(session: Session, symbols: list[str], timeframe: str) -> dict:
 
 
 def evaluate_in_process(session: Session, v: StrategyVersion, symbols: list[str],
-                        start_ts: int | None = None) -> dict:
+                        start_ts: int | None = None, data_snapshot=None) -> dict:
     strat = build(v)
-    data = {k: d for k, d in _load(session, symbols, strat.timeframe).items() if not d[0].empty}
+    source=data_snapshot if data_snapshot is not None else _load(session,symbols,strat.timeframe)
+    data = {k: d for k, d in source.items() if not d[0].empty}
     if not data:
         return {"error": "no data"}
     if any(has_lookahead(strat, bars, fund) for bars, fund in data.values()):
@@ -47,6 +50,35 @@ def evaluate_in_process(session: Session, v: StrategyVersion, symbols: list[str]
         out["sharpe"].append(s["sharpe"])
     out["sharpe"] = round(sum(out["sharpe"]) / len(out["sharpe"]), 3)
     return out
+
+
+def frozen_evaluator(session, symbols, cutoff_ts):
+    """Candidate and control share immutable frames, cutoff and explicit costs."""
+    symbols=tuple(symbols)
+    snapshots={}
+    def evaluate(version,start):
+        if version.kind!='params':
+            return {'error':'Automatic research supports bounded parameter variants only'}
+        timeframe=build(version).timeframe
+        if timeframe not in snapshots:
+            data={}; digest=hashlib.sha256()
+            for symbol in symbols:
+                bars=load_ohlcv(session,symbol,timeframe,end_ms=cutoff_ts).copy(deep=True)
+                funding=load_funding(session,symbol)
+                funding=funding[funding.ts<cutoff_ts].copy(deep=True)
+                data[symbol]=(bars,funding)
+                digest.update(symbol.encode())
+                digest.update(pd.util.hash_pandas_object(bars,index=True).values.tobytes())
+                digest.update(pd.util.hash_pandas_object(funding,index=True).values.tobytes())
+            snapshots[timeframe]=(data,digest.hexdigest())
+        data,dataset_id=snapshots[timeframe]
+        result=evaluate_in_process(session,version,list(symbols),start,data_snapshot=data)
+        result.update(dataset_id=dataset_id,cutoff_ts=cutoff_ts,
+                      window_start_ts=start,
+                      symbols=sorted(k for k,(bars,_) in data.items() if not bars.empty),
+                      cost_model={'taker_fee':0.00055,'slippage_bps':2.0})
+        return result
+    return evaluate
 
 
 def evaluate_isolated(db_url: str, v: StrategyVersion, symbols: list[str],

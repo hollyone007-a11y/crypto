@@ -83,7 +83,7 @@ def test_profitable_pool_does_not_certify_losing_coin(rules_app,monkeypatch):
 
 
 def test_research_evaluator_uses_fixed_symbol_snapshot(app,monkeypatch):
-    monkeypatch.setattr('ops.app.evaluate_version',lambda s,url,v,symbols,start:list(symbols))
+    monkeypatch.setattr('ops.app.frozen_evaluator',lambda s,symbols,cutoff:(lambda v,start:list(symbols)))
     original=list(app.symbols)
     evaluate=app._evaluator(None)
     app.symbols=['SOLUSDT']
@@ -92,11 +92,11 @@ def test_research_evaluator_uses_fixed_symbol_snapshot(app,monkeypatch):
 
 def test_changed_universe_is_not_blocked_by_previous_research_timer(session):
     for symbol in ['BTCUSDT','ETHUSDT']:
-        session.add(Ohlcv(exchange='binanceusdm',symbol=symbol,timeframe='1h',ts=NOW-3600000,
-                          open=100,high=101,low=99,close=100,volume=1))
+        for i in range(210):
+            session.add(Ohlcv(exchange='binanceusdm',symbol=symbol,timeframe='1h',ts=NOW-(i+1)*3600000,
+                              open=100,high=101,low=99,close=100,volume=1))
     session.commit()
     ev=lambda v,start:stats(.5)
     assert research(session,ev,['BTCUSDT'],NOW)['status']!='not_due'
     assert research(session,ev,['BTCUSDT'],NOW+1)['status']=='not_due'
     assert research(session,ev,['ETHUSDT'],NOW+2)['status']!='not_due'
-

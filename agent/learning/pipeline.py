@@ -150,6 +150,11 @@ def _paper_gate(s, v, evaluate, now) -> str:
     if "error" in cand:
         why.append(cand["error"])
     else:
+        if any(not math.isfinite(prod.get(key,float('nan'))) for key in ('sum_r','sharpe','max_dd_pct','worst_day_pct')):
+            why.append('non-finite forward benchmark statistics')
+        if cand.get('dataset_id') or prod.get('dataset_id'):
+            if any(cand.get(key)!=prod.get(key) for key in ('dataset_id','cutoff_ts','symbols','cost_model')):
+                why.append('forward candidate and benchmark provenance mismatch')
         if any(not math.isfinite(cand.get(key,float('nan'))) for key in ('sum_r','sharpe','max_dd_pct','worst_day_pct')):
             why.append('non-finite forward statistics')
         if cand.get('sum_r', 0) <= 0 or cand.get('sharpe', 0) <= 0:

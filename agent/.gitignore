@@ -8,6 +8,7 @@ __pycache__/
 incoming/
 *.log
 .cloud/
+reports/research/
 .pytest_cache/
 .coverage
 htmlcov/

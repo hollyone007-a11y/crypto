@@ -51,7 +51,7 @@ def build_scheduler(app: App) -> BlockingScheduler:
 
     def add(fn, trigger, kwargs=None, **kw):  # every job is wrapped: one failure never kills the loop
         sched.add_job(_safe, trigger, args=[fn], kwargs=kwargs or {}, **kw)
-    add(app.tick, "interval", minutes=1, id="tick")
+    add(app.tick, "interval", seconds=5, id="tick")
     add(app.collect_market, "cron", minute=1, id="market", executor='market')
     add(app.analyst_cycle, "cron", minute=3, id="analyst")
     add(app.snapshot_books, "interval", minutes=5, id="books", executor='market')
@@ -62,9 +62,9 @@ def build_scheduler(app: App) -> BlockingScheduler:
     add(app.advance_candidates, "cron", hour=0, minute=15, id="advance", executor='research')
     add(app.daily_report, "cron", hour=20, minute=0, id="daily_report")
     add(app.weekly, "cron", day_of_week="sun", hour=18, minute=0, id="weekly")
-    add(app.research_cycle, 'interval', hours=6, id='research', executor='research',
+    add(app.research_cycle, 'interval', minutes=10, id='research', executor='research',
         next_run_time=datetime.now(UTC))
-    add(app.publish_dashboard, 'interval', minutes=1, id='cloud', executor='publish',
+    add(app.publish_dashboard, 'interval', seconds=15, id='cloud', executor='publish',
         next_run_time=datetime.now(UTC))
     add(app.bootstrap_market,'date',run_date=datetime.now(UTC),id='bootstrap_market',executor='market')
     add(app.bootstrap_market,'interval',hours=6,id='universe',executor='market')
@@ -81,7 +81,7 @@ def main() -> int:
     _safe(app.startup)
     _safe(app.tick)
     _safe(app.analyst_cycle)
-    dashboard.serve(lambda: app.page())
+    dashboard.serve(lambda: app.page(),snapshot_fn=app.live_snapshot)
     log.info("dashboard on http://127.0.0.1:8765")
 
     def poll():

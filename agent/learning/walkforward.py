@@ -116,6 +116,12 @@ def beats(cand: dict, prod: dict, min_trades: int = 20) -> tuple[bool, list[str]
     """Promotion rule: better Sharpe AND not-worse max DD AND enough trades AND
     better Sharpe in at least half of the folds."""
     why = []
+    if any(not np.isfinite(prod.get(key,float('nan'))) for key in ('sharpe','max_dd_pct','expectancy_r')):
+        why.append('non-finite benchmark statistics')
+    if cand.get('dataset_id') or prod.get('dataset_id'):
+        for key in ('dataset_id','cutoff_ts','symbols','cost_model'):
+            if cand.get(key)!=prod.get(key):
+                why.append('candidate and benchmark use different '+key)
     if cand["trades"] < min_trades:
         why.append(f"too few OOS trades ({cand['trades']} < {min_trades})")
     if not cand.get('folds') or len(cand.get('folds',[])) != len(prod.get('folds',[])):

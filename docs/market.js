@@ -27,7 +27,7 @@ async function refresh(){if(busy)return;busy=true;$('refresh').disabled=true;
  if(!rows.length)throw Error('Нет подходящих контрактов');
  $('markets').replaceChildren();rows.forEach((t,i)=>{const tr=document.createElement('tr');const cells=[i+1,t.symbol,price(t.lastPrice),fmt(t.priceChangePercent)+'%',fmt(Number(t.quoteVolume)/1e6)];cells.forEach((value,j)=>{const td=document.createElement('td');if(j===1){const b=document.createElement('button');b.textContent=value;b.onclick=()=>chart(t.symbol);td.append(b)}else{td.textContent=String(value);if(j===3)td.className=Number(t.priceChangePercent)>=0?'up':'down'}tr.append(td)});$('markets').append(tr)});
  $('status').textContent='Обновлено '+new Date().toLocaleTimeString('ru-RU')+' · '+rows.length+' контрактов · фактические данные Binance';
- await chart(rows.some(t=>t.symbol===selected)?selected:rows[0].symbol);
+ document.dispatchEvent(new CustomEvent('markets-ready',{detail:rows.map(t=>t.symbol)})); await chart(rows.some(t=>t.symbol===selected)?selected:rows[0].symbol);
  }catch(error){$('status').textContent='Данные недоступны: '+error.message+'. Последние показанные значения могут быть устаревшими.';if(!$('markets').querySelector('button'))$('markets').textContent='Проверь доступность Binance API в своём регионе.'}
  finally{busy=false;$('refresh').disabled=false}}
 $('refresh').onclick=refresh;refresh();setInterval(refresh,60000);

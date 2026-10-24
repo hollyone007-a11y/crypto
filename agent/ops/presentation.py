@@ -78,7 +78,7 @@ def position_card(p, quote, journal):
 <span class="entry-tick" style="left:{entry_pct:.2f}%" title="Цена входа"></span>
 <span class="price-dot {'positive' if pnl is not None and pnl >= 0 else 'negative'}" style="left:{mark_pct:.2f}%" title="Текущая цена"></span></div>
 <div class="scale-labels"><span>СТОП<br><b>{number(p.stop)}</b></span><span>ВХОД<br><b>{number(p.entry)}</b></span><span>ТЕЙК<br><b>{number(take)}</b></span></div>'''
-    return f'''<article class="position"><div class="row"><div><h3>{e(p.symbol)} <span class="tag">{e('ЛОНГ' if p.side=='long' else 'ШОРТ')}</span></h3><p class="muted small">{e(p.strategy)} · {date(p.opened_ts)}</p></div><div class="pnl {'green' if pnl is not None and pnl>=0 else 'red'}">{number(pnl)} <small>USDT</small><span>{number(rr)} R</span></div></div>
+    return f'''<article class="position" data-symbol="{e(p.symbol)}" data-side="{e(p.side)}" data-entry="{p.entry}" data-stop="{p.stop}" data-take="{p.take}" data-qty="{p.qty}" data-fees="{p.fees}" data-funding="{p.funding}"><div class="row"><div><h3>{e(p.symbol)} <span class="tag">{e('ЛОНГ' if p.side=='long' else 'ШОРТ')}</span></h3><p class="muted small">{e(p.strategy)} · {date(p.opened_ts)}</p></div><div class="pnl {'green' if pnl is not None and pnl>=0 else 'red'}">{number(pnl)} <small>USDT</small><span>{number(rr)} R</span></div></div>
 <div class="row quote"><span>Цена сейчас <b>{number(mark)}</b></span><span>Объём <b>{number(p.qty,5)}</b></span></div>{scale}
 <p class="muted small">{e(journal.thesis if journal else '')}</p><p class="muted small">P/L включает комиссии входа, оценку выхода, проскальзывание входа и фандинг. Маркер — индикатор, цены им не изменяются.</p></article>'''
 
@@ -141,4 +141,6 @@ def render_dashboard(s, mode, equity, blockers, market_source='', quotes=None, l
     from ops.markets_panel import render_markets
     html=render_base_dashboard(s,mode,equity,blockers,market_source,quotes,limits)
     tab='<button role="tab" id="tab-markets" aria-controls="markets" data-tab="markets" aria-selected="false">Рынок и сигналы</button>'
-    return html.replace('</nav>',tab+'</nav>',1).replace('<p class="footer">',render_markets(s,quotes or {})+'<p class="footer">',1)
+    html=html.replace('</nav>',tab+'</nav>',1).replace('<p class="footer">',render_markets(s,quotes or {})+'<p class="footer">',1)
+    from ops.live_view import decorate
+    return decorate(s,html,quotes or {})
