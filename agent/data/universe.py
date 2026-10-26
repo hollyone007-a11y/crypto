@@ -5,7 +5,7 @@ STABLES = {'USDC','USDT','FDUSD','TUSD','DAI','USDP','BUSD','USD1','USDE','USDD'
 DAY = 86_400_000
 
 
-def select_universe(markets, tickers, now_ms, size=20, min_volume=50_000_000):
+def select_universe(markets, tickers, now_ms, size=20, min_volume=50_000_000, min_listing_days=30):
     rows=[]
     for market in markets.values():
         if not (market.get('active') and market.get('swap') and market.get('linear') and
@@ -18,7 +18,7 @@ def select_universe(markets, tickers, now_ms, size=20, min_volume=50_000_000):
             continue
         listed=market.get('info',{}).get('onboardDate')
         try:
-            if not listed or now_ms-int(listed)<30*DAY:
+            if not listed or now_ms-int(listed)<min_listing_days*DAY:
                 continue
             ticker=tickers.get(market['symbol'],{})
             volume=float(ticker.get('quoteVolume') or 0)
@@ -28,5 +28,6 @@ def select_universe(markets, tickers, now_ms, size=20, min_volume=50_000_000):
         except (ValueError,TypeError):
             continue
         rows.append({'symbol':market['id'],'market':market['symbol'],'quote_volume':volume,
-                     'last':price,'change_pct':ticker.get('percentage')})
-    return sorted(rows,key=lambda row:(-row['quote_volume'],row['symbol']))[:size]
+                     'last':price,'change_pct':ticker.get('percentage'),'listed_ts':int(listed)})
+    rows=sorted(rows,key=lambda row:(-row['quote_volume'],row['symbol']))
+    return rows if size is None else rows[:size]

@@ -57,6 +57,7 @@ class App:
         self.limits = load_limits(risk_file) if risk_file else load_limits()
         self.exchange = exchange or public_exchange(settings.exchange)
         self.market_exchange = exchange if exchange is not None else public_exchange(settings.exchange)
+        self.scan_exchange = exchange if exchange is not None else public_exchange(settings.exchange)
         self.feed = LiveFeed(self.exchange, self.symbols, max_age_s=30, clock=clock)
         self.tg = telegram or Telegram(settings.telegram_bot_token.get_secret_value(),
                                        settings.telegram_chat_id)
@@ -371,15 +372,14 @@ class App:
                        report_text=snapshot['report_text'])
 
     def live_snapshot(self):
-        from learning.lab import report_text
-        from ops.live_view import state_json
+        from ops.research_report import build as build_report
         with self.lock:
             html=self.page()
             with self.Session() as s:
                 heartbeat=int(self._state(s,'heartbeat','0'))
-                report=state_json(s,'research_attempt') or state_json(s,'research_report')
+                report=build_report(s)
         return {'mode':'paper','html':html,'heartbeat_ts':heartbeat,'generated_ts':self.now_ms(),
-                'report_text':report_text(report) if report else 'Исследовательский отчёт ещё не сформирован.'}
+                'report_text':report}
 
     def research_cycle(self):
         if self.settings.analyst_mode != 'rules':
@@ -407,9 +407,13 @@ class App:
         tickers=self.market_exchange.fetch_tickers()
         selected=select_universe(markets,tickers,self.now_ms(),self.settings.universe_size,
                                  self.settings.universe_min_volume)
+        catalog=select_universe(markets,tickers,self.now_ms(),size=None,min_volume=0,min_listing_days=0)
         if not selected:
             raise RuntimeError('No eligible liquid contracts; existing universe retained')
         with self.Session() as s:
+            from analyst.copy_trading import store
+            store(s,'market_catalog',dict(ts=self.now_ms(),contracts=catalog,
+                  scope='Все активные крипто USDT perpetual Binance. Не акции, не стейблкоины и не закрытые контракты.'))
             retained=list(s.scalars(select(Position.symbol).where(Position.status=='open')))
             snapshot={'updated_ts':self.now_ms(),'screened':len(markets),'selected':selected,
                       'min_quote_volume':self.settings.universe_min_volume,'min_listing_days':30}
@@ -423,6 +427,55 @@ class App:
                 self.feed.set_symbols(self.symbols)
             self._set_state(s,'universe',json.dumps(snapshot))
         return snapshot
+
+    def multiframe_collect(self):
+        if not self.settings.multiframe_enabled: return None
+        from learning.multiframe import run_batch
+        with self.Session() as s:
+            return run_batch(s,self.scan_exchange,self.now_ms(),self.settings.multiframe_batch_size)
+
+    def review_strategy_sources(self):
+        if not self.settings.multiframe_enabled: return None
+        from learning.source_watch import review
+        with self.Session() as s:
+            return review(s,self.now_ms())
+
+    def multiframe_execute(self):
+        if not self.settings.multiframe_enabled: return None
+        if (self.settings.entry_margin_pct,self.settings.entry_leverage,self.settings.max_hold_minutes,
+            self.settings.stalled_exit_minutes,self.limits.max_risk_per_trade_pct)!=(10,10,60,30,.5):
+            return {'status':'profile_mismatch','reason':'MTF-исследования относятся к профилю 10×/10%, 30/60 мин, риск 0.5%.'}
+        from learning.multiframe import pending_signals
+        from analyst.copy_trading import store
+        from analyst.news_risk import read_state
+        from strategies.base import Signal
+        from strategies.public_methods import METHODS
+        with self.Session() as s:
+            candidates=pending_signals(s,self.now_ms())
+        if not candidates: return None
+        with self.lock:
+            with self.Session() as s:
+                base=[x['symbol'] for x in read_state(s,'universe').get('selected',[])] or self.settings.symbol_list
+                opened=list(s.scalars(select(Position.symbol).where(Position.status=='open')))
+            self.symbols=list(dict.fromkeys(base+opened+[x['symbol'] for x in candidates]))
+            self.feed.set_symbols(self.symbols)
+            self.feed.refresh()
+        with self.trading() as (s,eng):
+            state=read_state(s,'mtf_decisions');seen=set(state.get('seen',[]));events=state.get('events',[])
+            for candidate in candidates:
+                import hashlib
+                coid='mtf-'+hashlib.sha256(f"{candidate['symbol']}:{candidate['key']}:{candidate['signal_ts']}".encode()).hexdigest()[:40]
+                if coid in seen: continue
+                seen.add(coid)
+                if not 0<=self.now_ms()-candidate['signal_ts']<=120_000: continue
+                source=METHODS[candidate['method']]
+                result=eng.submit(candidate['symbol'],Signal(**candidate['signal']),candidate['key'],
+                    thesis=source['name']+' · '+candidate['timeframe']+' · экспериментальная демосделка',
+                    context=dict(mtf=candidate,source=source),client_order_id=coid)
+                events.append(dict(ts=self.now_ms(),symbol=candidate['symbol'],timeframe=candidate['timeframe'],
+                    method=candidate['method'],status='демовход' if result.ok else 'пропущен',
+                    reason='Испытание на будущих данных; доходность не подтверждена.' if result.ok else '; '.join(result.reasons)))
+            store(s,'mtf_decisions',dict(ts=self.now_ms(),seen=sorted(seen)[-2000:],events=events[-100:]))
 
     def bootstrap_market(self):
         try:

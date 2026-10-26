@@ -59,13 +59,18 @@ def regime(df: pd.DataFrame, adx_n: int = 14, vol_window: int = 500) -> pd.Serie
     return out
 
 
-def resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+def resample(df: pd.DataFrame, rule: str, base_ms: int | None = None) -> pd.DataFrame:
     """Resample ts-ms OHLCV frame (e.g. 1h -> 4h). Drops incomplete last bucket."""
+    if df.empty: return df.copy()
+    df=df.drop_duplicates('ts').sort_values('ts')
+    step=base_ms or (int(df.ts.diff().dropna().median()) if len(df)>1 else 0)
+    duration=int(pd.Timedelta(rule).total_seconds()*1000)
+    if not step or duration%step: return df.iloc[:0].copy()
     x = df.set_index(pd.to_datetime(df["ts"], unit="ms", utc=True))
     agg = x.resample(rule, label="left", closed="left").agg(
         {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum",
          "ts": "count"}).rename(columns={"ts": "n"})
-    full = agg["n"].max()
+    full = duration//step
     agg = agg[agg["n"] == full].drop(columns="n").dropna()
     agg["ts"] = (agg.index.as_unit("ms").asi8).astype("int64")
     return agg.reset_index(drop=True)[["ts", "open", "high", "low", "close", "volume"]]

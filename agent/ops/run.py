@@ -46,6 +46,8 @@ def build_scheduler(app: App) -> BlockingScheduler:
                                         "research": ThreadPoolExecutor(1),
                                         "market": ThreadPoolExecutor(1),
                                         "context": ThreadPoolExecutor(1),
+                                        "scanner": ThreadPoolExecutor(1),
+                                        "sources": ThreadPoolExecutor(1),
                                         "publish": ThreadPoolExecutor(1)}, timezone="UTC",
                               job_defaults={"coalesce": True, "max_instances": 1,
                                             "misfire_grace_time": 120})
@@ -61,6 +63,11 @@ def build_scheduler(app: App) -> BlockingScheduler:
     add(app.collect_copy_sources, "interval", seconds=60, id="copy_sources", executor='context',
         next_run_time=datetime.now(UTC))
     add(app.copy_cycle, "interval", seconds=15, id="copy_demo")
+    add(app.multiframe_collect, 'interval', seconds=60, id='multiframe_collect',executor='scanner',
+        next_run_time=datetime.now(UTC))
+    add(app.multiframe_execute, 'interval', seconds=15, id='multiframe_execute')
+    add(app.review_strategy_sources,'interval',hours=24,id='strategy_sources',executor='sources',
+        next_run_time=datetime.now(UTC))
     add(app.collect_news, "cron", hour="*/6", minute=20, id="news_full",
         kwargs={"fear_greed": True, "calendar": True}, executor='context',
         next_run_time=datetime.now(UTC))

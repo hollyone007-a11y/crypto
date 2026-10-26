@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     universe_size: int = 20
     universe_min_volume: float = 50_000_000
     history_days: int = 120
+    multiframe_enabled: bool = False
+    multiframe_batch_size: int = 3
+
+    @field_validator('multiframe_batch_size')
+    @classmethod
+    def _batch(cls,value):
+        if not 1<=value<=10: raise ValueError('scan batch must be 1..10')
+        return value
     entry_margin_pct: float = 0.0  # zero retains risk-based sizing; user profile uses 10
     entry_leverage: float = 1.0
     max_hold_minutes: int = 0

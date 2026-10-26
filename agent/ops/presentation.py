@@ -140,9 +140,5 @@ def render_base_dashboard(s, mode, equity, blockers, market_source='', quotes=No
 
 
 def render_dashboard(s, mode, equity, blockers, market_source='', quotes=None, limits=None):
-    from ops.markets_panel import render_markets
-    html=render_base_dashboard(s,mode,equity,blockers,market_source,quotes,limits)
-    tab='<button role="tab" id="tab-markets" aria-controls="markets" data-tab="markets" aria-selected="false">Рынок и сигналы</button>'
-    html=html.replace('</nav>',tab+'</nav>',1).replace('<p class="footer">',render_markets(s,quotes or {})+'<p class="footer">',1)
-    from ops.live_view import decorate
-    return decorate(s,html,quotes or {})
+    from ops.mobile_dashboard import render
+    return render(s,mode,equity,blockers,market_source,quotes,limits)
