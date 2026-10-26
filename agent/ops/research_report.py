@@ -13,11 +13,17 @@ def build(session):
     records=[]
     for row in session.scalars(select(AgentState).where(AgentState.key.like('mtf:%'))):
         records.append(json.loads(row.value))
-    lines=['ЛАБОРАТОРИЯ · MTF · PAPER',
+    from ops.quality import audit
+    import time
+    quality=audit(session,int(time.time()*1000))
+    lines=['АУДИТ КАЧЕСТВА · PAPER',quality['accuracy_reason'],
+           f"Закрыто {quality['closed_total']}; новый профиль {quality['new_profile_closed']}; разобрано {quality['reviewed']}; без разбора {quality['missing_reviews']}.",
+           'Активное демо: '+quality['active_limits'],
+           *quality['caveats'],'','ЛАБОРАТОРИЯ · MTF · PAPER',
            'Профиль: 10×; залог 10%; стоп-риск ≤0.5%; выход 30/60 мин.',
            f"Контрактов в каталоге: {len(catalog.get('contracts',[]))}; получили проверку: {len(records)}.",
-           'ТФ: 5м, 15м, 1ч, 4ч. Три заранее объявленные адаптации; 12 гипотез на монету.',
-           'Общий календарь: 14д train, затем пауза 1ч, 7д test; прогрев до scored-окна.',
+           'ТФ: 5м, 15м, 1ч, 4ч. Три адаптации; 12 базовых и 6 активных гипотез на монету.',
+           'Общий календарь: 14д train, затем пауза 1ч, 14д test; прогрев до scored-окна.',
            '5м OHLC replay со стопом первым — приближение. Исторических новостей и совместного портфеля нет.',
            'Допуск только к экспериментальному демо, не к production. Прибыльность не подтверждена.','']
     for key,method in METHODS.items():
@@ -26,7 +32,7 @@ def build(session):
         lines.append(f"{item['symbol']} · {item['stage']} · {item.get('reason','')}")
         for score in item.get('scores',[]):
             test=score['test']
-            lines.append(f"  {score['method']} / {score['timeframe']}: {score['status']}; test {test['trades']} сделок, net {test['net_usdt']:+.2f} USDT, среднее {test['expectancy_r']:+.3f} R; t={test['t_stat']}; пропущено по профилю {test['rejected_by_profile']}; demo {score['paper_closed']} закрытых, {score['paper_net']:+.2f} USDT. {score['reason']}")
+            lines.append(f"  {score['method']} / {score['timeframe']} / {score.get('policy','balanced')}: {score['status']}; test {test['trades']} сделок, net {test['net_usdt']:+.2f} USDT, среднее {test['expectancy_r']:+.3f} R; t={test['t_stat']}; пропущено по профилю {test['rejected_by_profile']}; demo {score['paper_closed']} закрытых, {score['paper_net']:+.2f} USDT. {score['reason']}")
     lines+=['','РАЗБОР ЗАКРЫТЫХ СДЕЛОК']
     for lesson in session.scalars(select(Lesson).order_by(Lesson.ts.desc()).limit(20)):
         lines += [f'{lesson.symbol} · {lesson.strategy}: {lesson.what_worked}',

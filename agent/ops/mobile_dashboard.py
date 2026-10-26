@@ -41,7 +41,7 @@ def market_panel(session,items,catalog,scan,now):
         symbol=contract['symbol'];record=items.get(symbol,{})
         scores=record.get('scores',[]);ready=[x for x in scores if x['status']=='paper_trial']
         best=max(scores,key=lambda x:(x['test']['trades'],x['test']['expectancy_r'])) if scores else None
-        details='; '.join(f"{x['timeframe']}: {x['test']['trades']} test, {x['test']['expectancy_r']:+.3f}R, {x['status']}" for x in scores)
+        details='; '.join(f"{x['method']}/{x['timeframe']} ({x.get('policy','balanced')}): {x['test']['trades']} test, {x['test']['expectancy_r']:+.3f}R, {x['status']}" for x in scores)
         rows.append(f'''<tr data-market-row data-symbol="{e(symbol)}" data-stage="{e(record.get('stage','queue'))}" data-ready="{str(bool(ready)).lower()}">
 <td data-label="Монета"><strong>{e(symbol.removesuffix('USDT'))}</strong><small>USDT perpetual</small></td>
 <td data-label="Цена" data-market-price="{e(symbol)}">{number(contract.get('last'),6)}</td>
@@ -60,26 +60,28 @@ def market_panel(session,items,catalog,scan,now):
 def laboratory(session,items,scan,now):
     from ops.presentation import e,number,date
     from ops.live_view import report_panel
-    complete=[x for x in items.values() if x.get('stage')=='evaluated' and len(x.get('scores',[]))==12
+    complete=[x for x in items.values() if x.get('stage')=='evaluated' and len(x.get('scores',[]))==18
               and now-x.get('checked_ts',0)<24*3_600_000]
     # Match identical cutoff windows, not a mixture of differently dated/winning cohorts.
     latest=max((x['cutoff_ts'] for x in complete),default=0)
     paired=[x for x in complete if x['cutoff_ts']==latest]
     rows=[]
-    for tf in TIMEFRAMES:
-        scores=[score for item in paired for score in item['scores'] if score['timeframe']==tf]
+    comparisons=[('5m','balanced'),('5m','active'),('15m','balanced'),('15m','active'),('1h','balanced'),('4h','balanced')]
+    for tf,policy in comparisons:
+        scores=[score for item in paired for score in item['scores'] if score['timeframe']==tf and score.get('policy','balanced')==policy]
         samples=sum(x['test']['trades'] for x in scores)
         mean=sum(x['test']['expectancy_r']*x['test']['trades'] for x in scores)/samples if samples else None
-        rows.append([tf,len(paired),samples,number(mean,3)+' R' if mean is not None else '—',
+        rows.append([tf+(' · активный' if policy=='active' else ' · базовый'),len(paired),samples,number(mean,3)+' R' if mean is not None else '—',
                      sum(x['status']=='paper_trial' for x in scores),'Исследование' if scores else 'Сбор истории'])
     stages={key:sum(x.get('stage')==key for x in items.values()) for key in ('history','evaluated','filtered','error')}
     lessons=list(session.scalars(select(Lesson).order_by(Lesson.ts.desc()).limit(8)))
     lesson_cards=''.join(f'<details class="card" id="lesson-{x.id}"><summary><strong>{e(x.symbol)} · {e(x.outcome)}</strong><span class="small muted">{date(x.ts)}</span></summary><p>{e(x.what_worked)}</p><p><b>Вывод:</b> {e(x.mistake)}</p><p><b>Проверить:</b> {e(x.lesson)}</p></details>' for x in lessons)
     source_checks=read_state(session,'strategy_sources').get('sources',{})
     methods=''.join(f'<details class="card" id="method-{key}"><summary><strong>{e(value["name"])}</strong><span class="small muted">{e(value["author"])}</span></summary><p>{e(value["rules"])}</p><p class="muted small">{e(value["scope"])}</p><p class="small muted">Проверка источника: {date(source_checks.get(key,{}).get("ts",0))} · {e(source_checks.get(key,{}).get("reason","Ежедневная проверка ожидается."))}</p><a target="_blank" rel="noopener noreferrer" href="{e(value["url"])}">Первичный источник ↗</a></details>' for key,value in METHODS.items())
-    return f'''<div class="card accent"><span class="eyebrow">Текущая работа</span><h2>{'Проверяю стратегии на новых данных' if complete else 'Накопление общей истории для 12 гипотез'}</h2><p>История: {stages['history']} · сравнение готово: {stages['evaluated']} · наблюдение без входа: {stages['filtered']} · ошибок: {stages['error']}.</p><p class="small muted">Далее: 31 день общей истории → 14 дней train → пауза 1ч → 7 дней test → экспериментальное демо. При 10 убыточных по сумме последних демосделках вход в эту пару/ТФ/метод приостанавливается.</p></div>
-<div class="card"><h2>На каком ТФ лучше</h2><p class="small muted">Одинаковое окно {date(latest-7*86_400_000) if latest else '—'} — {date(latest)}; одна и та же группа монет и все три метода. Минусовые и нулевые результаты включены. Без полной истории победитель не объявляется.</p>{table(['ТФ','Монет','Test-сделок','Средний net R','Демокандидатов','Этап'],rows)}<a class="button" href="/research-report.txt" download="research-report.txt">Скачать отчёт TXT ↗</a></div>
-<details class="card" id="replay-method"><summary>Как проводится проверка</summary><p>Сигналы 5м/15м/1ч/4ч исполняются после закрытия свечи. Выходы повторяются на 5-минутных OHLC со стопом первым при двойном касании; это приближение, не тиковая точность. Профиль: залог 10%, 10×, выход 30/60 мин, риск 0.5%, комиссии 0.055% на сторону, проскальзывание 2 bps, спред 1 bps.</p><p>Исторические новости и общая книга портфеля не воспроизводятся. Минимум 20 train и 20 test, положительный чистый результат и t≥3. Затем только экспериментальная демоторговля; принятие базовых стратегий по этим тестам не разблокируется.</p></details>
+    from ops.quality import panel as quality_panel
+    return quality_panel(session,now)+f'''<div class="card accent"><span class="eyebrow">Текущая работа</span><h2>{'Проверяю стратегии на новых данных' if complete else 'Накопление общей истории для 18 гипотез'}</h2><p>История: {stages['history']} · сравнение готово: {stages['evaluated']} · наблюдение без входа: {stages['filtered']} · ошибок: {stages['error']}.</p><p class="small muted">Далее: 38 дней общей истории → 14 дней train → пауза 1ч → 14 дней test → экспериментальное демо. При 10 убыточных по сумме последних демосделках вход в эту пару/ТФ/метод приостанавливается.</p></div>
+<div class="card"><h2>На каком ТФ лучше</h2><p class="small muted">Одинаковое окно {date(latest-14*86_400_000) if latest else '—'} — {date(latest)}; одна и та же группа монет и все три метода. Минусовые и нулевые результаты включены. Без полной истории победитель не объявляется.</p>{table(['ТФ','Монет','Test-сделок','Средний net R','Демокандидатов','Этап'],rows)}<a class="button" href="/research-report.txt" download="research-report.txt">Скачать отчёт TXT ↗</a></div>
+<details class="card" id="replay-method"><summary>Как проводится проверка</summary><p>Сигналы 5м/15м/1ч/4ч исполняются после закрытия свечи. Выходы повторяются на 5-минутных OHLC со стопом первым при двойном касании; это приближение, не тиковая точность. Профиль: залог 10%, 10×, выход 30/60 мин, риск 0.5%, комиссии 0.055% на сторону, проскальзывание 2 bps, спред 1 bps.</p><p>Исторические новости и общая книга портфеля не воспроизводятся. В активном replay максимум два входа за день на отдельный прогон; конкуренция разных монет за общий слот не моделируется. Минимум 20 train и 20 test, положительный чистый результат и t≥3. Затем только экспериментальная демоторговля; принятие базовых стратегий по этим тестам не разблокируется.</p></details>
 <h2>Разбор ошибок</h2>{lesson_cards or '<div class="card empty">Разбор появится после закрытия сделки.</div>'}
 <h2>Стратегии из первичных источников</h2>{methods}
 <details class="card" id="baseline-research"><summary>Базовые исследования и полный отчёт</summary>{report_panel(session)}</details>'''
@@ -112,7 +114,7 @@ def render(s,mode,equity,blockers,market_source='',quotes=None,limits=None):
         ['Предел просадки',str(rules.get('max_drawdown_pct','—'))+'%'],['Защитный стоп','Обязателен']])+table(['Время','Монета','Причина'],[[date(x.ts),x.symbol,'; '.join(x.detail.get('reasons',[])) or x.detail.get('reason',x.kind)] for x in risks])
     overview=f'''<div class="kpis"><div class="card balance"><span class="eyebrow">Капитал · USDT</span><b>{number(equity)}</b><small>Баланс {number(account.cash if account else None)}</small></div><div class="card"><span class="eyebrow">Результат с начала</span><b class="{'green' if net is not None and net>=0 else 'red'}">{number(net)}</b><small>включая открытые позиции</small></div><div class="card"><span class="eyebrow">Закрытые сделки</span><b>{count}</b><small>Чистый итог {number(total or 0)} USDT</small></div></div>
 <div class="columns"><div class="card"><div class="row"><h2>Капитал</h2><span class="muted small">USDT · демо</span></div>{spark([x.equity for x in snapshots])}</div><div class="card"><span class="eyebrow">Последнее решение · {date(run.ts if run else 0)}</span><h2>{'Пауза новых входов' if blockers else 'Агент наблюдает рынок'}</h2><p>{e('; '.join(blockers) or decision.get('thesis','Ожидание анализа.'))}</p><a class="button" href="#positions">Открытые сделки · {len(positions)} ↗</a></div></div>
-<details class="card" id="risk-details"><summary>Профиль и ограничения</summary><p>10× · залог 10% капитала · номинал 100% капитала. Новые позиции: до 60 мин; после 30 мин выход при net-прогрессе меньше 0.25R. Полный размер не проходит риск 0.5% — вход пропускается. Прежние позиции сохраняют исходные правила.</p>{risk_details}</details>'''
+<details class="card" id="risk-details"><summary>Профиль и ограничения</summary><p>10× · залог 10% капитала · номинал 100% капитала. Базовый режим: до 60 мин, проверка прогресса через 30 мин. Активный эксперимент: до 45 мин, проверка через 20 мин; максимум 1 активная позиция и 2 входа за день. Риск на вход ≤0.5%. Лимит времени также применяется к ранее открытым позициям.</p>{risk_details}</details>'''
     recent=read_state(s,'mtf_decisions').get('events',[])+read_state(s,'copy_state').get('events',[])
     recent=sorted(recent,key=lambda x:x['ts'],reverse=True)[:30]
     news=list(s.scalars(select(News).where(News.published_ts>now-6*3_600_000,News.published_ts<=now).order_by(News.published_ts.desc()).limit(6)))

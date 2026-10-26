@@ -58,6 +58,7 @@ class App:
         self.exchange = exchange or public_exchange(settings.exchange)
         self.market_exchange = exchange if exchange is not None else public_exchange(settings.exchange)
         self.scan_exchange = exchange if exchange is not None else public_exchange(settings.exchange)
+        self.priority_exchange = exchange if exchange is not None else public_exchange(settings.exchange)
         self.feed = LiveFeed(self.exchange, self.symbols, max_age_s=30, clock=clock)
         self.tg = telegram or Telegram(settings.telegram_bot_token.get_secret_value(),
                                        settings.telegram_chat_id)
@@ -99,6 +100,7 @@ class App:
             engine.profile=dict(margin_pct=self.settings.entry_margin_pct,
                 leverage=self.settings.entry_leverage,max_hold_minutes=self.settings.max_hold_minutes,
                 stalled_exit_minutes=self.settings.stalled_exit_minutes)
+            engine.profile['apply_holding_to_legacy']=self.settings.legacy_duration_enabled
             yield s, engine
 
     def _state(self, s, key, default=""):
@@ -127,6 +129,7 @@ class App:
                 leverage=self.settings.entry_leverage,max_hold_minutes=self.settings.max_hold_minutes,
                 stalled_exit_minutes=self.settings.stalled_exit_minutes,
                 validation_scope='baseline_only' if self.settings.entry_margin_pct else 'baseline',
+                active_demo_enabled=self.settings.active_demo_enabled,legacy_duration_enabled=self.settings.legacy_duration_enabled,
                 ts=self.now_ms()))
         with self.lock:
             self.feed.refresh()
@@ -440,6 +443,11 @@ class App:
         with self.Session() as s:
             return review(s,self.now_ms())
 
+    def priority_research(self):
+        if not self.settings.multiframe_enabled:return None
+        from learning.multiframe import refresh_priority
+        with self.Session() as s:return refresh_priority(s,self.priority_exchange,self.now_ms())
+
     def multiframe_execute(self):
         if not self.settings.multiframe_enabled: return None
         if (self.settings.entry_margin_pct,self.settings.entry_leverage,self.settings.max_hold_minutes,
@@ -462,7 +470,12 @@ class App:
             self.feed.refresh()
         with self.trading() as (s,eng):
             state=read_state(s,'mtf_decisions');seen=set(state.get('seen',[]));events=state.get('events',[])
+            base_profile=dict(eng.profile)
             for candidate in candidates:
+                active=candidate.get('policy')=='active'
+                if active and not self.settings.active_demo_enabled:continue
+                eng.profile={**base_profile,'active_demo':active,
+                    'max_hold_minutes':45 if active else 60,'stalled_exit_minutes':20 if active else 30}
                 import hashlib
                 coid='mtf-'+hashlib.sha256(f"{candidate['symbol']}:{candidate['key']}:{candidate['signal_ts']}".encode()).hexdigest()[:40]
                 if coid in seen: continue
@@ -472,7 +485,7 @@ class App:
                 result=eng.submit(candidate['symbol'],Signal(**candidate['signal']),candidate['key'],
                     thesis=source['name']+' · '+candidate['timeframe']+' · экспериментальная демосделка',
                     context=dict(mtf=candidate,source=source),client_order_id=coid)
-                events.append(dict(ts=self.now_ms(),symbol=candidate['symbol'],timeframe=candidate['timeframe'],
+                events.append(dict(ts=self.now_ms(),symbol=candidate['symbol'],timeframe=candidate['timeframe'],policy=candidate.get('policy','balanced'),
                     method=candidate['method'],status='демовход' if result.ok else 'пропущен',
                     reason='Испытание на будущих данных; доходность не подтверждена.' if result.ok else '; '.join(result.reasons)))
             store(s,'mtf_decisions',dict(ts=self.now_ms(),seen=sorted(seen)[-2000:],events=events[-100:]))

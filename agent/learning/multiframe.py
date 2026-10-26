@@ -12,11 +12,11 @@ from data.copy_sources import number
 from db.models import AgentState, Ohlcv, JournalEntry, FundingRate
 from db.session import insert_ignore
 from research.features import resample
-from research.profile_replay import STEP, MODEL, align_signals, replay
+from research.profile_replay import STEP, MODEL, POLICIES, align_signals, replay
 from strategies.public_methods import METHODS, TIMEFRAMES, signals
 
 DAY=86_400_000
-HISTORY_DAYS=35
+HISTORY_DAYS=42
 RULES_REVISION=hashlib.sha256((ROOT/'strategies'/'public_methods.py').read_bytes()+
                             (ROOT/'research'/'profile_replay.py').read_bytes()).hexdigest()[:20]
 
@@ -75,7 +75,7 @@ def evaluate_symbol(session,row,now):
     result=dict(symbol=symbol,checked_ts=now,cutoff_ts=cutoff,stage='history',scores=[],
                 latest_5m=int(base.ts.max()) if len(base) else 0,base_bars=len(base),reason='Собирается общая история 5м; старшие ТФ строятся из неё.',model=MODEL,rules_revision=RULES_REVISION)
     # Identical scored dates across every strategy and timeframe. Ten days precede training for warm-up.
-    test_start=cutoff-7*DAY;train_start=cutoff-21*DAY;warmup_start=cutoff-31*DAY
+    test_start=cutoff-14*DAY;train_start=cutoff-28*DAY;warmup_start=cutoff-38*DAY
     result['window']=dict(train_start=train_start,train_end=test_start-3_600_000,test_start=test_start,test_end=cutoff)
     if base.empty or hourly.empty or int(base.ts.min())>warmup_start or int(hourly.ts.min())>warmup_start:
         return result
@@ -97,25 +97,27 @@ def evaluate_symbol(session,row,now):
         bars=base.copy() if tf=='5m' else resample(base,'15min',STEP) if tf=='15m' else hourly.copy() if tf=='1h' else resample(hourly,'4h',3_600_000)
         if bars.empty or len(bars[bars.ts<train_start])<60:
             result['reason']='Недостаточно общей прогревочной истории для '+tf;result['stage']='history';return result
-        for method in METHODS:
+        variants=[(method,policy) for method in METHODS for policy in ('balanced','active') if policy=='balanced' or tf in ('5m','15m')]
+        for method,policy in variants:
             generated=signals(bars,method)
+            generated['take']=bars.close+(generated['take']-bars.close)*POLICIES[policy]['target_multiplier']
             aligned=align_signals(base,bars,generated,step)
-            train=replay(base,aligned,train_start,test_start-3_600_000,funding)
-            test=replay(base,aligned,test_start,cutoff,funding)
+            train=replay(base,aligned,train_start,test_start-3_600_000,funding,policy)
+            test=replay(base,aligned,test_start,cutoff,funding,policy)
             eligible=(train['trades']>=20 and test['trades']>=20 and train['net_usdt']>0
                       and test['net_usdt']>0 and test['expectancy_r']>0 and test['t_stat']>=3
                       and test['max_dd_pct']>-10)
-            key=f'mtf_{method}_{tf}'
+            key=f'mtf_{method}_{tf}'+('_active' if policy=='active' else '')
             closed=list(session.scalars(select(JournalEntry).where(JournalEntry.strategy==key,
                 JournalEntry.symbol==symbol,JournalEntry.exit_ts.is_not(None)).order_by(JournalEntry.exit_ts.desc()).limit(20)))
             actual_net=sum(x.pnl or 0 for x in closed)
             if len(closed)>=10 and actual_net<0: eligible=False
             status='paper_trial' if eligible else 'rejected' if test['trades']>=20 else 'insufficient_sample'
-            score=dict(method=method,timeframe=tf,key=key,train=train,test=test,status=status,
+            score=dict(method=method,timeframe=tf,policy=policy,key=key,train=train,test=test,status=status,
                        paper_closed=len(closed),paper_net=round(actual_net,4),dataset_id=digest,
                        reason='Только экспериментальная демоторговля; независимые будущие результаты ещё не подтверждены.' if eligible else
                        'Отрицательная серия демосделок: повторный вход приостановлен.' if len(closed)>=10 and actual_net<0 else
-                       'Нужны 20+ train и 20+ test, положительный чистый результат и t≥3 после перебора 12 гипотез.')
+                       'Нужны 20+ train и 20+ test, положительный чистый результат и t≥3; перебор гипотез не доказывает будущую доходность.')
             if eligible:
                 last=generated.iloc[-1];close_ts=int(bars.ts.iloc[-1])+step
                 if last.side and 0<=now-close_ts<=120_000:
@@ -137,7 +139,7 @@ def provenance(base,funding):
 
 
 def run_batch(session,exchange,now,batch_size=3,budget_seconds=40):
-    session.execute(delete(Ohlcv).where(Ohlcv.exchange=='binanceusdm',Ohlcv.timeframe=='5m',Ohlcv.ts<now-40*DAY))
+    session.execute(delete(Ohlcv).where(Ohlcv.exchange=='binanceusdm',Ohlcv.timeframe=='5m',Ohlcv.ts<now-45*DAY))
     session.commit()
     catalog_state=read_state(session,'market_catalog')
     if now-catalog_state.get('ts',0)>=60_000:
@@ -180,8 +182,35 @@ def pending_signals(session,now):
     for row in session.scalars(select(AgentState).where(AgentState.key.like('mtf:%'))):
         item=json.loads(row.value)
         if item.get('rules_revision')!=RULES_REVISION: continue
-        if now-item.get('checked_ts',0)>120_000: continue
+        if not 0<=now-item.get('checked_ts',0)<=120_000: continue
         for score in item.get('scores',[]):
             if score['status']=='paper_trial' and score.get('signal') and 0<=now-score['signal_ts']<=120_000:
                 found.append(dict(symbol=item['symbol'],dataset_id=item['dataset_id'],**score))
     return sorted(found,key=lambda x:(-x['test']['expectancy_r'],x['symbol'],x['key']))[:3]
+
+
+def refresh_priority(session,exchange,now,limit=4):
+    """Frequent small live queue, independent of the slow all-contract history sweep."""
+    catalog=read_state(session,'market_catalog').get('contracts',[])
+    by_symbol={x['symbol']:x for x in catalog}
+    eligible=[x for x in catalog if x.get('quote_volume',0)>=50_000_000 and now-x.get('listed_ts',now)>=38*DAY]
+    eligible_symbols={x['symbol'] for x in eligible}
+    complete=[]
+    for row in session.scalars(select(AgentState).where(AgentState.key.like('mtf:%'))):
+        item=json.loads(row.value)
+        if item.get('stage')=='evaluated' and item.get('symbol') in eligible_symbols: complete.append(by_symbol[item['symbol']])
+    selected=list({x['symbol']:x for x in sorted(complete,key=lambda x:-x.get('quote_volume',0))+eligible}.values())[:limit]
+    done=[];errors=[];observations=[]
+    for item in selected:
+        try:
+            refresh_history(session,exchange,item['symbol'],now)
+            record=evaluate_symbol(session,item,now)
+            store(session,'mtf:'+item['symbol'],record)
+            if not 0<=now-record.get('latest_5m',0)<=2*STEP: raise ValueError('stale_candles')
+            done.append(item['symbol']);observations.append(dict(symbol=item['symbol'],latest_closed_ts=record['latest_5m']))
+        except Exception as exc: errors.append(dict(symbol=item['symbol'],error=type(exc).__name__))
+    previous=read_state(session,'priority_research')
+    result=dict(ts=now,symbols=done,errors=errors,successful_observations=observations,interval_seconds=60,
+                last_success_ts=now if done else previous.get('last_success_ts',0))
+    store(session,'priority_research',result)
+    return result

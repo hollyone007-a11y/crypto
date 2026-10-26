@@ -50,6 +50,17 @@ class ExecutionEngine:
         if news['blockers']:
             return SubmitResult(False, news['blockers'])
         context = {**(context or {}), 'news': news}
+        if self.profile and self.profile.get('active_demo'):
+            from sqlalchemy import select,func
+            from db.models import Position
+            start=(self.broker.clock()//86_400_000)*86_400_000
+            base=select(func.count()).select_from(Position).where(Position.strategy.like('mtf_%_active'))
+            opened=self.s.scalar(base.where(Position.status=='open'))
+            today=self.s.scalar(base.where(Position.opened_ts>=start))
+            if opened or today>=2:
+                reasons=['Активное демо: максимум 1 открытая позиция и 2 входа за UTC-день.']
+                self.risk._event('reject',symbol,reasons=reasons)
+                return SubmitResult(False,reasons)
         bid, ask = self.broker.quotes(symbol)
         ref = ask if signal.side == "long" else bid
         if self.profile and self.profile.get('margin_pct',0):

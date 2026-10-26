@@ -10,6 +10,8 @@ STEP=300_000
 MODEL={'version':'profile-5m-v1','fee':.00055,'slippage_bps':2.,'spread_bps':1.,
        'margin_pct':10.,'leverage':10.,'risk_pct':.5,'max_hold_minutes':60,'stalled_exit_minutes':30,
        'execution_resolution':'5m conservative OHLC','news_replay':False,'portfolio_replay':False}
+POLICIES={'balanced':dict(max_hold_minutes=60,stalled_exit_minutes=30,target_multiplier=1.),
+          'active':dict(max_hold_minutes=45,stalled_exit_minutes=20,target_multiplier=.75)}
 
 
 def align_signals(base, higher, generated, timeframe_ms):
@@ -23,9 +25,10 @@ def align_signals(base, higher, generated, timeframe_ms):
     return result
 
 
-def replay(base, generated, start, end, funding=None):
+def replay(base, generated, start, end, funding=None, policy='balanced'):
+    controls=POLICIES[policy]
     fee=MODEL['fee']; slip=MODEL['slippage_bps']/10000; spread=MODEL['spread_bps']/20000
-    equity=10_000.;peak=equity;day=None;day_start=equity;daily_lock=False;halted=False;pos=None
+    equity=10_000.;peak=equity;day=None;day_start=equity;daily_lock=False;halted=False;pos=None;day_entries=0
     curve=[];trades=[];rejected=0
     frows=[] if funding is None else list(funding.itertuples(index=False))
     f_by_bar={}
@@ -49,21 +52,22 @@ def replay(base, generated, start, end, funding=None):
         if ts<start or ts>=end: continue
         today=ts//86_400_000
         marked_open=equity+(pos['side']*(row.open-pos['entry'])*pos['qty'] if pos else 0)
-        if day!=today: day=today;day_start=marked_open;daily_lock=False
+        if day!=today: day=today;day_start=marked_open;daily_lock=False;day_entries=0
         peak=max(peak,marked_open)
         if marked_open<=peak*.9: halted=True
         if marked_open<=day_start*.98: daily_lock=True
-        if pos is None and i and generated.side.iloc[i-1] and not halted and not daily_lock:
+        if pos is None and i and generated.side.iloc[i-1] and not halted and not daily_lock and (policy!='active' or day_entries<2):
             s=int(generated.side.iloc[i-1]);stop=float(generated['stop'].iloc[i-1]);take=float(generated['take'].iloc[i-1])
             ref=row.open*(1+s*spread);qty=equity/ref;dist=abs(ref-stop)
             valid=(int(base.ts.iloc[i-1])+STEP==ts and math.isfinite(stop) and math.isfinite(take)
                    and s*(ref-stop)>0 and s*(take-ref)>0
                    and qty*(dist+ref*(2*fee+2*slip))<=equity*.005)
             # Do not include truncated end-of-window positions in evidence.
-            if valid and ts+MODEL['max_hold_minutes']*60_000<=end:
+            if valid and ts+controls['max_hold_minutes']*60_000<=end:
                 entry=ref*(1+s*slip);cost=entry*qty*fee;equity-=cost
                 pos=dict(side=s,stop=stop,take=take,qty=qty,entry=entry,fees=cost,funding=0.,
                          ts=ts,index=i,risk=abs(entry-stop)*qty)
+                day_entries+=1
             else: rejected+=1
         if pos:
             s=pos['side']
@@ -77,8 +81,8 @@ def replay(base, generated, start, end, funding=None):
             net=s*(executable-pos['entry'])*pos['qty']-pos['fees']-executable*pos['qty']*fee+pos['funding']
             if stop_hit: close(i,min(row.open,pos['stop']) if s>0 else max(row.open,pos['stop']),'stop')
             elif take_hit: close(i,pos['take'],'take')
-            elif age>=60: close(i,row.close,'time_limit')
-            elif age>=30 and net<pos['risk']*.25: close(i,row.close,'stalled')
+            elif age>=controls['max_hold_minutes']: close(i,row.close,'time_limit')
+            elif age>=controls['stalled_exit_minutes'] and net<pos['risk']*.25: close(i,row.close,'stalled')
         mtm=pos['side']*(row.close-pos['entry'])*pos['qty'] if pos else 0
         marked=equity+mtm;peak=max(peak,marked)
         if marked<=day_start*.98: daily_lock=True
@@ -93,7 +97,7 @@ def replay(base, generated, start, end, funding=None):
     out=metrics(result)
     out['max_dd_pct']=round(float((result.equity/result.equity.cummax()-1).min())*100,3) if len(result.equity) else 0.
     out.update(net_usdt=round(sum(x['pnl'] for x in trades),4),rejected_by_profile=rejected,
-               time_exits=sum(x['reason'] in ('stalled','time_limit') for x in trades),model=MODEL,
+               time_exits=sum(x['reason'] in ('stalled','time_limit') for x in trades),model={**MODEL,**controls,'policy':policy},
                avg_hold_minutes=round(sum(x['bars']*5 for x in trades)/len(trades),2) if trades else None,
                start_ts=start,end_ts=end)
     return out

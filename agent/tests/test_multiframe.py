@@ -123,7 +123,7 @@ def test_changed_funding_or_model_changes_evidence_identity(monkeypatch):
 
 def test_missing_funding_coverage_cannot_certify_complete_price_history(session,monkeypatch):
     from learning import multiframe
-    end=NOW;start=(end-35*DAY)//STEP*STEP
+    end=NOW;start=(end-42*DAY)//STEP*STEP
     n=int((end-start)//STEP)
     base=frame(n);base.ts=np.arange(n)*STEP+start
     monkeypatch.setattr(multiframe,'load_bars',lambda *a:base)

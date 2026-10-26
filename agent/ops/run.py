@@ -47,6 +47,7 @@ def build_scheduler(app: App) -> BlockingScheduler:
                                         "market": ThreadPoolExecutor(1),
                                         "context": ThreadPoolExecutor(1),
                                         "scanner": ThreadPoolExecutor(1),
+                                        "priority": ThreadPoolExecutor(1),
                                         "sources": ThreadPoolExecutor(1),
                                         "publish": ThreadPoolExecutor(1)}, timezone="UTC",
                               job_defaults={"coalesce": True, "max_instances": 1,
@@ -66,6 +67,7 @@ def build_scheduler(app: App) -> BlockingScheduler:
     add(app.multiframe_collect, 'interval', seconds=60, id='multiframe_collect',executor='scanner',
         next_run_time=datetime.now(UTC))
     add(app.multiframe_execute, 'interval', seconds=15, id='multiframe_execute')
+    add(app.priority_research,'interval',seconds=60,id='priority_research',executor='priority',next_run_time=datetime.now(UTC))
     add(app.review_strategy_sources,'interval',hours=24,id='strategy_sources',executor='sources',
         next_run_time=datetime.now(UTC))
     add(app.collect_news, "cron", hour="*/6", minute=20, id="news_full",
@@ -93,6 +95,7 @@ def main() -> int:
         return 2
     _safe(app.startup)
     _safe(app.tick)
+    _safe(app.review_lessons)
     _safe(app.analyst_cycle)
     dashboard.serve(lambda: app.page(),snapshot_fn=app.live_snapshot)
     log.info("dashboard on http://127.0.0.1:8765")

@@ -21,7 +21,7 @@ Closed hourly candles, funding, order books and open interest support four resea
 
 New entries require positive validation evidence, at least 20 validation trades **for the coin**, and risk approval. Parameter hypotheses are bounded; changes require historical validation and new-data testing. Candidates, skipped entries, reasons and post-trade observations are recorded. A profitable backtest does not establish future profitability.
 
-Risk limits remain global across all coins: 0.5% planned risk per trade, 3 open positions, 3x aggregate notional cap, 2% daily loss limit, 10% drawdown halt, mandatory stops. Gaps, fees and execution uncertainty can exceed planned loss even in simulation.
+Risk limits remain global across all coins: 0.5% planned risk per trade, 3 open positions, 10x leverage ceiling (fixed-margin entries target 1x equity notional per position), 2% daily loss limit, 10% drawdown halt, mandatory stops. Gaps, fees and execution uncertainty can exceed planned loss even in simulation.
 
 ## TradingView
 
@@ -47,17 +47,27 @@ For private snapshot publishing, configure `CLOUD_DASHBOARD_URL` and the owner-p
 
 The public site can be previewed with `python -m http.server 8080 --directory docs`. Market requests may be unavailable in jurisdictions where Binance restricts access; the UI shows an error instead of invented prices.
 
+## Quality audit and controlled active demo
+
+The dashboard's Laboratory now reports observed sample size, lesson coverage, actual new-profile and active-profile outcomes, data freshness and source failures. Predictive accuracy remains **unknown**; a small number of old-profile paper trades and fixed signal-confidence values cannot establish forecasting skill or profitable adaptation.
+
+A four-contract priority research queue refreshes every 60 seconds, separately from the all-contract history sweep. Completed coins must still pass current volume/listing filters. Failed refresh attempts never certify fresh exchange data, and future-dated study records cannot create candidates. Daily author-document checks remain static-source monitoring; Hyperliquid supplies public fills/positions, not private trader strategies. Historical news and combined-portfolio execution remain outside the OHLC replay.
+
+The optional **active demo** variant covers 5m/15m with targets 25% nearer, stalled-exit checks after 20 minutes and a 45-minute maximum hold. Position notional, leverage and the 0.5% risk budget remain unchanged. Runtime hard caps permit one open active position and two active entries per UTC day; replay applies the daily cap to each isolated run. Global competition among coins/methods is not simulated, so isolated results are not expected portfolio returns. Both balanced and active gates retain 20+ training/test trades, positive net result and t>=3.
+
+All hypotheses now share 14d training, a 1h embargo and 14d test after warm-up; 38 days of continuous history are needed. Collection retains up to 42 days and prunes5m data beyond 45 days. Profit remains unconfirmed. Legacy positions now receive the configured duration cap without being relabelled as 10x entries; winning lessons no longer claim a nonexistent loss. `ACTIVE_DEMO_ENABLED` and `LEGACY_DURATION_ENABLED` are explicit local settings. At release 234 tests passed.
+
 ## Live updates and research reports
 
 ### Mobile dashboard and all-contract multi-timeframe laboratory
 
 The owner-private dashboard now uses five compact sections: Overview, Positions, Market, Laboratory and Journal. A bottom navigation, one-column cards, 44+ pixel controls, searchable/paged contract list and collapsed evidence details adapt to phone widths. Prices stream only for open positions and up to 20 visible market rows; the complete catalog has its own timestamp. Read-only account snapshots and source failures remain explicit.
 
-`MULTIFRAME_ENABLED=true` enables an independent scanner for **all active crypto USDT perpetuals** returned by Binance (519 at verification); stablecoins, non-crypto and inactive contracts are outside this catalog. Observation does not mean permission to enter: volume >=5m USDT/day, listing age >=30d, adequate fresh history, source validity and existing risk gates remain required. The quote/order writer watches a smaller set plus all open positions, keeping stops responsive. Up to eight contracts are visited each minute with a 40-second work budget; each visit fetches at most two 5m pages and one funding page. Backfill runs progressively. Five-minute candles older than 40 days are pruned; low disk space pauses collection.
+`MULTIFRAME_ENABLED=true` enables an independent scanner for **all active crypto USDT perpetuals** returned by Binance (519 at verification); stablecoins, non-crypto and inactive contracts are outside this catalog. Observation does not mean permission to enter: volume >=5m USDT/day, listing age >=30d, adequate fresh history, source validity and existing risk gates remain required. The quote/order writer watches a smaller set plus all open positions, keeping stops responsive. Up to eight contracts are visited each minute with a 40-second work budget; each visit fetches at most two 5m pages and one funding page. Backfill runs progressively. Five-minute candles older than 45 days are pruned; low disk space pauses collection.
 
 Three fixed, sourced research hypotheses—Bollinger continuation, Donchian breakout and Raschke-inspired ADX pullback—are evaluated on 5m, 15m, 1h and 4h. These are disclosed adaptations with own ATR stops/targets and duration exits, not reproductions of private trader systems. A bounded daily source review detects document changes and unavailability; it never downloads executable strategy code or silently changes rules.
 
-The scored calendar is identical for all 12 combinations per coin: 14d training, 1h embargo, then 7d held-out test, preceded by warm-up. All higher timeframes derive from the same continuous 5m history. Funding requires successful endpoint coverage; unavailable history is never assumed zero. Dataset identity includes prices, funding, model assumptions and method/replay implementation; obsolete revisions cannot supply executable candidates. Cross-timeframe summary uses an identical symbol cohort and cutoff, including losing/no-trade methods.
+The scored calendar is identical for all 18 combinations per coin: 14d training, 1h embargo, then 14d held-out test, preceded by warm-up. All higher timeframes derive from the same continuous 5m history. Funding requires successful endpoint coverage; unavailable history is never assumed zero. Dataset identity includes prices, funding, model assumptions and method/replay implementation; obsolete revisions cannot supply executable candidates. Cross-timeframe summary uses an identical symbol cohort and cutoff, including losing/no-trade methods.
 
 The dedicated replay models fixed 10x/10% margin sizing, costs, stop-first ambiguous candles, executable-side stalled exits, 30/60-minute duration rules and sticky marked-equity breakers **at 5m resolution**. This is an approximate, separate-coin OHLC experiment, not tick-accurate or combined-portfolio validation; historical news is not replayed. It does not unlock baseline production promotions. Experimental paper entries require >=20 train and >=20 test trades, positive net results, t>=3 and drawdown limits, then fresh signals/quotes and the common runtime risk gate. Testing 12 hypotheses creates selection bias; future independent evidence remains necessary. Negative recent realized paper series suspend the specific coin/method/timeframe. No profit or guaranteed trade frequency is implied.
 

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     history_days: int = 120
     multiframe_enabled: bool = False
     multiframe_batch_size: int = 3
+    active_demo_enabled: bool = False
+    legacy_duration_enabled: bool = False
 
     @field_validator('multiframe_batch_size')
     @classmethod
