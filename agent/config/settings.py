@@ -37,6 +37,28 @@ class Settings(BaseSettings):
     universe_size: int = 20
     universe_min_volume: float = 50_000_000
     history_days: int = 120
+    entry_margin_pct: float = 0.0  # zero retains risk-based sizing; user profile uses 10
+    entry_leverage: float = 1.0
+    max_hold_minutes: int = 0
+    stalled_exit_minutes: int = 0
+
+    @field_validator('entry_margin_pct')
+    @classmethod
+    def _margin(cls, value):
+        if not 0 <= value <= 100: raise ValueError('margin must be 0..100')
+        return value
+
+    @field_validator('entry_leverage')
+    @classmethod
+    def _leverage(cls, value):
+        if not 1 <= value <= 10: raise ValueError('leverage must be 1..10')
+        return value
+
+    @field_validator('max_hold_minutes','stalled_exit_minutes')
+    @classmethod
+    def _holding(cls, value):
+        if not 0 <= value <= 1440: raise ValueError('holding must be 0..1440 minutes')
+        return value
     database_url: str = f"sqlite:///{(ROOT / 'futures_agent.db').as_posix()}"
 
     bybit_api_key: SecretStr = SecretStr("")

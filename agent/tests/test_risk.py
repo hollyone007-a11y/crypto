@@ -48,7 +48,7 @@ def reject(rm, req=LONG, acc=ACC, needle=""):
 def test_real_risk_yaml_matches_spec():
     L = load_limits()
     assert (L.max_risk_per_trade_pct, L.max_leverage, L.max_open_positions,
-            L.daily_loss_limit_pct, L.max_drawdown_pct, L.require_stop_loss) == (0.5, 3.0, 3, 2.0, 10.0, True)
+            L.daily_loss_limit_pct, L.max_drawdown_pct, L.require_stop_loss) == (0.5, 10.0, 3, 2.0, 10.0, True)
 
 
 def test_limits_object_is_immutable():
@@ -95,8 +95,8 @@ def test_size_capped_by_leverage_including_open_positions(env):
     rm, *_ = env
     acc = AccountSnapshot(10_000, (OpenPos("ETHUSDT", "long", 100, 200.0),))  # 20k notional used
     d = rm.evaluate(OrderRequest("BTCUSDT", "long", 100.0, 99.99), acc)
-    assert d.approved and d.qty == pytest.approx(100)  # (30k - 20k) / 100
-    full = AccountSnapshot(10_000, (OpenPos("ETHUSDT", "long", 150, 200.0),))
+    assert d.approved and d.qty == pytest.approx(800)  # (100k - 20k) / 100
+    full = AccountSnapshot(10_000, (OpenPos("ETHUSDT", "long", 500, 200.0),))
     reject(rm, OrderRequest("BTCUSDT", "long", 100.0, 99.0), full, "leverage headroom")
 
 
@@ -120,7 +120,7 @@ def test_smaller_requested_qty_is_honoured(env):
     (dataclasses.replace(LONG, requested_qty=26.0), "exceeds allowed"),        # > 0.5% risk
     (dataclasses.replace(LONG, requested_qty=1e12), "exceeds allowed"),
     (dataclasses.replace(LONG, requested_qty=-5.0), "invalid requested qty"),
-    (dataclasses.replace(LONG, requested_leverage=10.0), "requested leverage"),
+    (dataclasses.replace(LONG, requested_leverage=11.0), "requested leverage"),
     (dataclasses.replace(LONG, requested_leverage=math.nan), "requested leverage"),
 ])
 def test_bypass_attempts_rejected(env, req, needle):
@@ -210,7 +210,7 @@ def test_max_drawdown_halts_permanently(env):
 def test_risk_yaml_modified_at_runtime_fails_closed(env):
     rm, alerts, _, cfg = env
     assert rm.evaluate(LONG, ACC).approved
-    cfg.write_text(cfg.read_text().replace("max_leverage: 3.0", "max_leverage: 50"))
+    cfg.write_text(cfg.read_text().replace("max_leverage: 10.0", "max_leverage: 50"))
     reject(rm, needle="integrity")
     assert rm.halted and any("risk.yaml" in a for a in alerts)
 

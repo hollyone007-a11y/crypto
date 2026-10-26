@@ -94,7 +94,11 @@ class App:
             rm = RiskManager(s, self.limits, self.kill_switch, on_alert=self.alert,
                              clock=self.now_ms)
             broker = PaperBroker(s, rm, self.feed.quotes, clock=self.now_ms)
-            yield s, ExecutionEngine(s, rm, broker, Journal(s), alert=self.alert)
+            engine=ExecutionEngine(s, rm, broker, Journal(s), alert=self.alert)
+            engine.profile=dict(margin_pct=self.settings.entry_margin_pct,
+                leverage=self.settings.entry_leverage,max_hold_minutes=self.settings.max_hold_minutes,
+                stalled_exit_minutes=self.settings.stalled_exit_minutes)
+            yield s, engine
 
     def _state(self, s, key, default=""):
         row = s.get(AgentState, key)
@@ -116,6 +120,13 @@ class App:
 
     # ---------- jobs ----------
     def startup(self) -> None:
+        from analyst.copy_trading import store
+        with self.Session() as s:
+            store(s,'execution_profile',dict(margin_pct=self.settings.entry_margin_pct,
+                leverage=self.settings.entry_leverage,max_hold_minutes=self.settings.max_hold_minutes,
+                stalled_exit_minutes=self.settings.stalled_exit_minutes,
+                validation_scope='baseline_only' if self.settings.entry_margin_pct else 'baseline',
+                ts=self.now_ms()))
         with self.lock:
             self.feed.refresh()
         with self.trading() as (s, eng):
@@ -152,6 +163,9 @@ class App:
             # Match the strategy holding horizon used by the backtester.
             from strategies.registry import build
             for position in eng.broker.open_positions():
+                from execution.holding import enforce
+                if enforce(s,eng,position,self.now_ms()):
+                    continue
                 family, separator, version = position.strategy.rpartition('@v')
                 if not separator or not version.isdigit():
                     continue
@@ -232,10 +246,31 @@ class App:
         with self.Session() as s:
             nc = NewsCollector(s)
             nc.collect_rss()
+            from analyst.copy_trading import store
+            store(s, 'news_status', dict(ts=self.now_ms(), successful_sources=nc.successful_sources,
+                                        failed_sources=nc.failed_sources))
             if fear_greed:
                 nc.collect_fear_greed(limit=2)
             if calendar:
                 nc.collect_calendar()
+
+    def collect_copy_sources(self) -> None:
+        from analyst.copy_trading import source_of, store
+        from analyst.news_risk import read_state
+        from data.copy_sources import collect
+        with self.Session() as s:
+            previous = read_state(s, 'copy_sources')
+            positions = list(s.scalars(select(Position).where(
+                Position.status == 'open', Position.strategy == 'copy_hl@v1')))
+            tracked = [source_of(s, p).get('address', '') for p in positions]
+        result = collect(previous, self.now_ms(), tracked)
+        with self.Session() as s:
+            store(s, 'copy_sources', result)
+
+    def copy_cycle(self) -> dict:
+        from analyst.copy_trading import apply
+        with self.trading() as (s, eng):
+            return apply(s, eng, self.symbols, self.now_ms(), self.settings.exchange)
 
     def analyst_cycle(self) -> dict | None:
         if not self.market_ready:

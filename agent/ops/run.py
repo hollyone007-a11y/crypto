@@ -45,6 +45,7 @@ def build_scheduler(app: App) -> BlockingScheduler:
     sched = BlockingScheduler(executors={"default": ThreadPoolExecutor(1),
                                         "research": ThreadPoolExecutor(1),
                                         "market": ThreadPoolExecutor(1),
+                                        "context": ThreadPoolExecutor(1),
                                         "publish": ThreadPoolExecutor(1)}, timezone="UTC",
                               job_defaults={"coalesce": True, "max_instances": 1,
                                             "misfire_grace_time": 120})
@@ -55,9 +56,14 @@ def build_scheduler(app: App) -> BlockingScheduler:
     add(app.collect_market, "cron", minute=1, id="market", executor='market')
     add(app.analyst_cycle, "cron", minute=3, id="analyst")
     add(app.snapshot_books, "interval", minutes=5, id="books", executor='market')
-    add(app.collect_news, "cron", minute="10,40", id="news", executor='market')
+    add(app.collect_news, "interval", minutes=5, id="news", executor='context',
+        next_run_time=datetime.now(UTC))
+    add(app.collect_copy_sources, "interval", seconds=60, id="copy_sources", executor='context',
+        next_run_time=datetime.now(UTC))
+    add(app.copy_cycle, "interval", seconds=15, id="copy_demo")
     add(app.collect_news, "cron", hour="*/6", minute=20, id="news_full",
-        kwargs={"fear_greed": True, "calendar": True}, executor='market')
+        kwargs={"fear_greed": True, "calendar": True}, executor='context',
+        next_run_time=datetime.now(UTC))
     add(app.review_lessons, "interval", minutes=15, id="lessons")
     add(app.advance_candidates, "cron", hour=0, minute=15, id="advance", executor='research')
     add(app.daily_report, "cron", hour=20, minute=0, id="daily_report")

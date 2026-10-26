@@ -7,7 +7,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $pyw = Join-Path $root ".venv\Scripts\pythonw.exe"
 if (-not (Test-Path $pyw)) { throw "venv not found: $pyw" }
 
-$action = New-ScheduledTaskAction -Execute $pyw -Argument "-m ops.run" -WorkingDirectory $root
+$action = New-ScheduledTaskAction -Execute $pyw -Argument "-m ops.background" -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries `

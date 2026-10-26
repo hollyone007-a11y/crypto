@@ -31,13 +31,20 @@ class NewsCollector:
 
     def collect_rss(self) -> int:
         inserted = 0
+        self.successful_sources = []
+        self.failed_sources = []
         for name, url in self.sources.get("rss", {}).items():
             try:
                 resp = self.client.get(url)
                 resp.raise_for_status()
-            except httpx.HTTPError as e:
+                parsed = feedparser.parse(resp.text)
+                if not parsed.entries:
+                    raise ValueError('empty or invalid RSS feed')
+            except (httpx.HTTPError, ValueError) as e:
+                self.failed_sources.append(name)
                 log.warning("rss %s failed: %s", name, e)  # one bad feed must not stop the rest
                 continue
+            self.successful_sources.append(name)
             inserted += insert_ignore(self.session, News, parse_rss(name, resp.text))
         log.info("news: +%d", inserted)
         return inserted
@@ -73,7 +80,7 @@ def parse_rss(source: str, text: str) -> list[dict]:
         if not link:
             continue
         parsed = entry.get("published_parsed") or entry.get("updated_parsed")
-        published = calendar.timegm(parsed) * 1000 if parsed else fetched
+        published = calendar.timegm(parsed) * 1000 if parsed else 0  # unknown time is not fresh evidence
         rows.append(dict(source=source, url=link[:1024], title=entry.get("title", ""),
                          summary=entry.get("summary", "")[:4000],
                          published_ts=published, fetched_ts=fetched))

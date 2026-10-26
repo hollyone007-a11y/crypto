@@ -39,6 +39,9 @@ def review_rules(s, now_ms, limit=50):
         elif trade.exit_reason == 'stop':
             tags.append('stop')
             hypothesis = 'Стоп сработал. Убыток сам по себе не доказывает ошибку; сравнить ширину стопа на новых данных.'
+        elif trade.exit_reason in ('time_limit','stalled','copy_timeout'):
+            tags.append('holding_limit')
+            hypothesis = 'Выход по времени или отсутствию прогресса. Сравнить чистый результат, длительность и упущенное движение на отдельной выборке; лимит удержания не менять по одной сделке.'
         s.add(Lesson(ts=now_ms, journal_id=trade.id, strategy=trade.strategy,
                      symbol=trade.symbol, outcome='win' if pnl > 0 else ('loss' if pnl < 0 else 'flat'),
                      what_worked=observation, mistake='Причина убытка не установлена; это наблюдение, не причинный вывод.',

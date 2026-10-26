@@ -26,6 +26,9 @@ def report_panel(session):
 <p class="muted small">Следующая полная проверка не раньше {date(report.get('next_due_ts',0))}; готовность проверяется каждые 10 минут.</p>
 <a class="tag" href="/research-report.txt" download="research-report.txt">Скачать последний отчёт</a>
 <p class="muted small">Проверка новых гипотез не означает смену рабочих правил. Изменением считается только записанное принятие или откат версии.</p></div>'''
+    profile=state_json(session,'execution_profile')
+    if profile.get('margin_pct'):
+        header+='<div class="card"><h2>Область доказательств</h2><p>Исторические тесты относятся к базовым стратегиям. Они не доказывают доходность нового размера 10×/10%, новостного фильтра, копирования и выходов по времени. Автоматическое принятие кандидатов приостановлено до проверки соответствующего профиля; сбор наблюдений и исследования продолжаются.</p></div>'
     if not report: return header
     observations=table(['Версия','Закрытых сделок','Чистый итог USDT','Комиссии USDT','Стопы / отдача 1R'],
         [[x['strategy'],x['sample_size'],number(x['net_usdt']),number(x['fees_usdt']),f"{x['stop_count']} / {x['giveback_count']}"]
@@ -63,8 +66,16 @@ def decorate(session,html,quotes):
     html=html.replace('Обновление раз в минуту; время в UTC.','Котировки — поток; снимок счёта — около 15 с. Время в UTC.')
     html=re.sub(r'<script>.*?</script>','',html,flags=re.S)
     html=html.replace('<main>','<main>'+clocks,1)
+    from ops.profile_panel import render as render_profile
+    html=html.replace('<main>','<main>'+render_profile(session),1)
     marker='<section role="tabpanel" aria-labelledby="tab-learning" id="learning" hidden>'
     html=html.replace(marker,marker+report_panel(session),1)
+    from ops.context_panel import render as render_context
+    universe=state_json(session,'universe')
+    symbols=[x['symbol'] for x in universe.get('selected',[])] or ['BTCUSDT','ETHUSDT']
+    tab='<button role="tab" id="tab-context" aria-controls="context" data-tab="context" aria-selected="false">Трейдеры и новости</button>'
+    html=html.replace('</nav>',tab+'</nav>',1)
+    html=html.replace('<p class="footer">',render_context(session,generated,symbols)+'<p class="footer">',1)
     section=re.search(r'(<section[^>]*id="learning"[^>]*>)(.*?)(</section>)',html,re.S)
     if section:
         digest=hashlib.sha256(section.group(2).encode('utf-8')).hexdigest()[:16]

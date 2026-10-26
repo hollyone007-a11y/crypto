@@ -27,6 +27,7 @@ class ExecutionEngine:
         self.broker = broker
         self.journal = journal
         self.alert = alert or (lambda m: None)
+        self.profile = None  # supplied only by the running App, never inferred from a signal
 
     def startup(self) -> list[str]:
         issues = self.broker.reconcile()
@@ -44,8 +45,31 @@ class ExecutionEngine:
         if prior is not None:  # idempotent replay
             return SubmitResult(True, ["duplicate client_order_id: returning existing"],
                                 prior.position_id, prior.qty)
+        from analyst.news_risk import assess
+        news = assess(self.s, symbol, self.broker.clock())
+        if news['blockers']:
+            return SubmitResult(False, news['blockers'])
+        context = {**(context or {}), 'news': news}
         bid, ask = self.broker.quotes(symbol)
         ref = ask if signal.side == "long" else bid
+        if self.profile and self.profile.get('margin_pct',0):
+            profile = self.profile
+            equity = self.broker.equity()
+            quantity = equity * profile['margin_pct']/100 * profile['leverage']/ref
+            # Allow no silent reduction: 10% margin means exactly that target, or no entry.
+            cost_risk = quantity * (abs(ref-signal.stop) + ref*(2*self.broker.fee+2*self.broker.slip))
+            budget = equity*self.risk.limits.max_risk_per_trade_pct/100
+            reasons=[]
+            if cost_risk > budget:
+                reasons.append(f'10× / залог 10%: риск со стопом и оценкой издержек {cost_risk/equity*100:.3f}% > лимита {self.risk.limits.max_risk_per_trade_pct:.3f}%; вход пропущен.')
+            if requested_qty is not None and quantity > requested_qty*(1+1e-9):
+                reasons.append('Размер 10× / 10% превышает отдельный лимит риска источника копии.')
+            if reasons:
+                self.risk._event('reject',symbol,reasons=reasons,profile=profile)
+                return SubmitResult(False,reasons)
+            requested_qty, requested_leverage = quantity, profile['leverage']
+            context = {**context, 'execution_profile':{**profile,'equity_at_entry':equity,
+                'target_notional':quantity*ref,'target_margin':equity*profile['margin_pct']/100}}
         self.risk.update_equity(self.broker.equity())
         req = OrderRequest(symbol=symbol, side=signal.side, entry=ref, stop=signal.stop,
                            take=signal.take, strategy=strategy, requested_qty=requested_qty,

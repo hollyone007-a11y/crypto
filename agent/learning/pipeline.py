@@ -139,6 +139,11 @@ def _walk_forward_gate(s, v, evaluate, now) -> str:
 
 
 def _paper_gate(s, v, evaluate, now) -> str:
+    from analyst.news_risk import read_state
+    profile=read_state(s,'execution_profile')
+    if profile.get('margin_pct') and profile.get('validation_scope')!='profile_validated':
+        log_event(s,v,'paper_wait',False,reason='Новый профиль 10×/10% и временные выходы не подтверждены этим бэктестом.')
+        return f'{label(v)} waiting: execution-profile validation required; baseline research only'
     cand = evaluate(v, v.trial_start_ts)
     bench = _benchmark(s, v)
     prod = evaluate(bench, v.trial_start_ts) if bench else {"sum_r": 0.0}

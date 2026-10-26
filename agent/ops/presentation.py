@@ -64,6 +64,8 @@ def event_text(event):
 
 
 def position_card(p, quote, journal):
+    profile=(journal.context or {}).get('execution_profile',{}) if journal else {}
+    profile_text=(f"Демоплечо {profile['leverage']}× · залог {profile['margin_pct']}% · лимит удержания {profile['max_hold_minutes']} мин" if profile else 'Позиция открыта по прежнему профилю размера и удержания')
     mark = (quote[0] if p.side == "long" else quote[1]) if quote else None
     sign = 1 if p.side == "long" else -1
     pnl = sign * (mark-p.entry)*p.qty - p.fees + p.funding - mark*p.qty*.00055 if mark else None
@@ -80,7 +82,7 @@ def position_card(p, quote, journal):
 <div class="scale-labels"><span>СТОП<br><b>{number(p.stop)}</b></span><span>ВХОД<br><b>{number(p.entry)}</b></span><span>ТЕЙК<br><b>{number(take)}</b></span></div>'''
     return f'''<article class="position" data-symbol="{e(p.symbol)}" data-side="{e(p.side)}" data-entry="{p.entry}" data-stop="{p.stop}" data-take="{p.take}" data-qty="{p.qty}" data-fees="{p.fees}" data-funding="{p.funding}"><div class="row"><div><h3>{e(p.symbol)} <span class="tag">{e('ЛОНГ' if p.side=='long' else 'ШОРТ')}</span></h3><p class="muted small">{e(p.strategy)} · {date(p.opened_ts)}</p></div><div class="pnl {'green' if pnl is not None and pnl>=0 else 'red'}">{number(pnl)} <small>USDT</small><span>{number(rr)} R</span></div></div>
 <div class="row quote"><span>Цена сейчас <b>{number(mark)}</b></span><span>Объём <b>{number(p.qty,5)}</b></span></div>{scale}
-<p class="muted small">{e(journal.thesis if journal else '')}</p><p class="muted small">P/L включает комиссии входа, оценку выхода, проскальзывание входа и фандинг. Маркер — индикатор, цены им не изменяются.</p></article>'''
+<p class="muted small">{e(profile_text)}</p><p class="muted small">{e(journal.thesis if journal else '')}</p><p class="muted small">P/L включает комиссии входа, оценку выхода, проскальзывание входа и фандинг. Маркер — индикатор, цены им не изменяются.</p></article>'''
 
 
 CSS='''

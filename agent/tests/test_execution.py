@@ -59,7 +59,9 @@ def test_open_fills_at_ask_sizes_by_risk_and_journals(env):
     assert acc.cash == pytest.approx(10_000 - 0.001 * 100.1 * pos.qty)
     j = eng.s.scalar(select(JournalEntry))
     assert j.thesis == "BTC breaking out" and j.signal["rationale"] == "breakout"
-    assert j.regime == "trend_up" and j.context == {"note": "x"}
+    assert j.regime == "trend_up" and j.context['note'] == 'x'
+    assert j.context['news']['symbol'] == 'BTCUSDT'
+    assert j.context['news']['blockers'] == []
 
 
 def test_idempotent_client_order_id(env):
