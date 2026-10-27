@@ -22,12 +22,18 @@ def build(session):
            *quality['caveats'],'','ЛАБОРАТОРИЯ · MTF · PAPER',
            'Профиль: 10×; залог 10%; стоп-риск ≤0.5%; выход 30/60 мин.',
            f"Контрактов в каталоге: {len(catalog.get('contracts',[]))}; получили проверку: {len(records)}.",
-           'ТФ: 5м, 15м, 1ч, 4ч. Три адаптации; 12 базовых и 6 активных гипотез на монету.',
+           f'ТФ: 5м, 15м, 1ч, 4ч. Методов {len(METHODS)}; гипотез {len(METHODS)*6} на монету.',
            'Общий календарь: 14д train, затем пауза 1ч, 14д test; прогрев до scored-окна.',
            '5м OHLC replay со стопом первым — приближение. Исторических новостей и совместного портфеля нет.',
            'Допуск только к экспериментальному демо, не к production. Прибыльность не подтверждена.','']
     for key,method in METHODS.items():
         lines += [method['name']+' · '+method['author'],method['url'],method['rules'],method['scope'],'']
+    lines+=['TRADINGVIEW: только просмотр графиков; автоматический импорт/торговые webhooks не подключены.',
+            'https://www.tradingview.com/policies/',
+            'Наблюдения Hyperliquid: исполнения, не полные сделки; стратегия трейдера неизвестна; reported closedPnL не равен чистой прибыли счёта.']
+    for row in session.scalars(select(AgentState).where(AgentState.key.like('trader_observations:%')).limit(6)):
+        value=json.loads(row.value)
+        lines.append(f"{value['address']}: исполнений {value.get('fill_count',0)}, закрывающих {value.get('closing_fill_count',0)}, reported closedPnL {value.get('reported_closed_pnl',0)}, неполных окон/пауз {value.get('coverage_gaps',0)}.")
     for item in sorted(records,key=lambda x:-x.get('checked_ts',0))[:30]:
         lines.append(f"{item['symbol']} · {item['stage']} · {item.get('reason','')}")
         for score in item.get('scores',[]):

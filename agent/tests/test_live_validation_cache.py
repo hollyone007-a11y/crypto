@@ -60,4 +60,4 @@ def test_six_hour_old_validation_is_recalculated(session,monkeypatch):
         return dict(trades=0,net_usdt=0,expectancy_r=0,t_stat=0,max_dd_pct=0)
     monkeypatch.setattr(module,'replay',fake_replay)
     result=module.evaluate_symbol(session,dict(symbol='BTCUSDT'),now)
-    assert len(calls)==36 and result['evaluated_ts']==now
+    assert len(calls)==len(module.METHODS)*12 and result['evaluated_ts']==now

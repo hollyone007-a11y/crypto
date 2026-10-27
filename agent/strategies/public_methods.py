@@ -4,6 +4,10 @@ from research.features import atr, adx, ema
 
 TIMEFRAMES={'5m':300_000,'15m':900_000,'1h':3_600_000,'4h':14_400_000}
 METHODS={
+ 'st_flip':dict(name='Supertrend · подтверждённый поворот',author='Независимая открытая гипотеза',
+  url='https://www.quantconnect.com/docs/v2/writing-algorithms/indicators/supported-indicators/super-trend',
+  rules='ATR10 × 3; смена направления после закрытия свечи с фильтром EMA50. Стоп — линия индикатора; цель — 2 исходных риска.',
+  scope='Собственная реализация на данных Binance по открытой математической идее. Не импорт TradingView и не подтверждённая прибыльная стратегия; временные выходы и активный вариант — наши правила.'),
  'bb_cont':dict(name='Bollinger · продолжение',author='John Bollinger',
   url='https://www.bollingerbands.com/bollinger-band-rules',
   rules='Закрытие впервые за SMA20 ± 2σ; стоп 2 ATR14, цель 3 ATR14. Касание полосы не считается входом.',
@@ -32,6 +36,13 @@ def signals(bars, method):
         high=bars.high.rolling(20).max().shift(1);low=bars.low.rolling(20).min().shift(1)
         up=(close>high)&(close.shift(1)<=high.shift(1))
         down=(close<low)&(close.shift(1)>=low.shift(1));target=4
+    elif method=='st_flip':
+        from research.supertrend import calculate
+        direction,level=calculate(bars)
+        average=ema(close,50)
+        up=(direction==1)&(direction.shift(1)==-1)&(close>average)
+        down=(direction==-1)&(direction.shift(1)==1)&(close<average)
+        a=(close-level).abs()/2;target=4
     elif method=='grail':
         trend=ema(close,20);strength=adx(bars)
         rising=(strength>30)&(strength>strength.shift(1))

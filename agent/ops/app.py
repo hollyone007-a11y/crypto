@@ -270,6 +270,8 @@ class App:
         result = collect(previous, self.now_ms(), tracked)
         with self.Session() as s:
             store(s, 'copy_sources', result)
+            from learning.trader_observations import observe
+            observe(s,result,self.now_ms())
 
     def copy_cycle(self) -> dict:
         from analyst.copy_trading import apply
