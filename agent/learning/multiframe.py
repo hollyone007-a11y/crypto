@@ -1,5 +1,6 @@
 """Bounded rolling all-contract research; predeclared methods, paired calendar, no code generation."""
 import hashlib
+import copy
 import json
 import shutil
 import time
@@ -92,7 +93,13 @@ def evaluate_symbol(session,row,now):
         result['reason']='История фандинга не покрывает scored-окно; нулевой фандинг не предполагается.'
         return result
     digest=provenance(base,funding)
+    previous=read_state(session,'mtf:'+symbol)
+    evaluated_ts=previous.get('evaluated_ts',previous.get('checked_ts',0))
+    if (previous.get('stage')=='evaluated' and previous.get('rules_revision')==RULES_REVISION
+            and 0<=now-evaluated_ts<6*3_600_000):
+        return refresh_live_signals(session,previous,base,hourly,now,digest)
     result.update(stage='evaluated',dataset_id=digest,reason='Сравнение на общей истории; 5м replay, без исторического новостного фильтра и общей книги портфеля.')
+    result['evaluated_ts']=now
     for tf,step in TIMEFRAMES.items():
         bars=base.copy() if tf=='5m' else resample(base,'15min',STEP) if tf=='15m' else hourly.copy() if tf=='1h' else resample(hourly,'4h',3_600_000)
         if bars.empty or len(bars[bars.ts<train_start])<60:
@@ -126,6 +133,36 @@ def evaluate_symbol(session,row,now):
                         rationale=METHODS[method]['name']+' · '+tf+' · эксперимент после отложенной проверки')
                     score['signal_ts']=close_ts
             result['scores'].append(score)
+    return result
+
+
+def refresh_live_signals(session,previous,base,hourly,now,live_dataset_id):
+    """Keep validation evidence frozen; update executable signals and realized-loss guards only."""
+    result=copy.deepcopy(previous)
+    result.update(checked_ts=now,evaluated_ts=previous.get('evaluated_ts',previous.get('checked_ts',0)),
+                  live_cutoff_ts=(now//STEP)*STEP,live_dataset_id=live_dataset_id,
+                  latest_5m=int(base.ts.max()),base_bars=len(base),historical_reused=True)
+    frames={'5m':base,'15m':resample(base,'15min',STEP),'1h':hourly,'4h':resample(hourly,'4h',3_600_000)}
+    generated_cache={}
+    for score in result.get('scores',[]):
+        score.pop('signal',None);score.pop('signal_ts',None)
+        closed=list(session.scalars(select(JournalEntry).where(JournalEntry.symbol==result['symbol'],
+            JournalEntry.strategy==score['key'],JournalEntry.exit_ts.is_not(None)).order_by(JournalEntry.exit_ts.desc()).limit(20)))
+        score.update(paper_closed=len(closed),paper_net=round(sum(x.pnl or 0 for x in closed),4))
+        if len(closed)>=10 and score['paper_net']<0:
+            score.update(status='rejected',reason='Отрицательная серия демосделок: повторный вход приостановлен.')
+        if score['status']!='paper_trial':continue
+        tf,method,policy=score['timeframe'],score['method'],score.get('policy','balanced')
+        bars=frames[tf]
+        if bars.empty:continue
+        key=(tf,method)
+        if key not in generated_cache: generated_cache[key]=signals(bars,method)
+        last=generated_cache[key].iloc[-1];close_ts=int(bars.ts.iloc[-1])+TIMEFRAMES[tf]
+        if last.side and 0<=now-close_ts<=120_000:
+            entry=float(bars.close.iloc[-1]);take=entry+(float(last['take'])-entry)*POLICIES[policy]['target_multiplier']
+            score['signal']=dict(side='long' if last.side>0 else 'short',entry=entry,stop=float(last['stop']),
+                take=take,confidence=.55,rationale=METHODS[method]['name']+' · '+tf+' · свежий сигнал после отдельной исторической проверки')
+            score['signal_ts']=close_ts
     return result
 
 

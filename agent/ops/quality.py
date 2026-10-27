@@ -1,5 +1,6 @@
 """Observable evidence audit. Accuracy is unknown until enough independent forward outcomes exist."""
 import json
+from collections import Counter
 from sqlalchemy import select,func
 from analyst.news_risk import read_state
 from db.models import AgentState,JournalEntry,Lesson,Position,PromotionEvent
@@ -17,6 +18,7 @@ def audit(session,now):
         except ValueError:continue
     valid=[x for x in records if x.get('rules_revision')==RULES_REVISION and x.get('stage')=='evaluated']
     fresh=[x for x in valid if 0<=now-x.get('checked_ts',0)<=120_000]
+    score_counts=Counter(score.get('status') for item in valid for score in item.get('scores',[]))
     priority=read_state(session,'priority_research')
     profile=read_state(session,'execution_profile')
     news=read_state(session,'news_status');sources=read_state(session,'strategy_sources')
@@ -39,6 +41,8 @@ def audit(session,now):
         closed_total=len(trades),new_profile_closed=len(actual),active_closed=len(active),reviewed=sum(x.id in reviewed for x in trades),
         missing_reviews=sum(x.id not in reviewed for x in trades),net_closed=round(sum(x.pnl or 0 for x in trades),4),
         evaluated_current_revision=len(valid),evaluated_fresh=len(fresh),contracts_observed=len(records),
+        studies=sum(score_counts.values()),qualified_studies=score_counts.get('paper_trial',0),
+        insufficient_studies=score_counts.get('insufficient_sample',0),rejected_studies=score_counts.get('rejected',0),
         source_errors=sum(x.get('stage')=='error' for x in records),priority=priority,feeds=statuses,
         heartbeat_age_s=max(0,(now-beats)//1000),active_demo_enabled=profile.get('active_demo_enabled',False),
         active_limits='5м/15м; цель ближе на 25%; выход 20/45 мин; риск ≤0.5%; 1 открытая активная позиция, 2 входа за UTC-день.',
@@ -55,6 +59,7 @@ def panel(session,now):
     item=audit(session,now)
     return f'''<div class="card accent" id="quality-audit"><div class="row"><h2>Качество анализа</h2><span class="tag">Точность пока не установлена</span></div>
 <p>Закрытых сделок: <b>{item['closed_total']}</b> · нового профиля: <b>{item['new_profile_closed']}</b> · активных: <b>{item['active_closed']}</b> · разобрано: <b>{item['reviewed']}</b> · без разбора: <b>{item['missing_reviews']}</b>.</p>
-<p class="small muted">Свежих полных исследований: {item['evaluated_fresh']} из {item['evaluated_current_revision']}. Ошибок источника в очереди: {item['source_errors']}. Процент прибыльных сделок на маленькой выборке не измеряет точность прогноза.</p>
+<p><b>Почему нет новых входов:</b> допуск получили {item['qualified_studies']} из {item['studies']} вариантов. Недостаточно сделок для проверки: {item['insufficient_studies']}; тест не пройден: {item['rejected_studies']}.</p>
+<p class="small muted">Свежий анализ сигналов: {item['evaluated_fresh']} из {item['evaluated_current_revision']}. История перепроверяется раз в 6 часов, её оценки хранятся отдельно от текущего сигнала. Ошибок источника в очереди: {item['source_errors']}. Процент прибыльных сделок на маленькой выборке не измеряет точность прогноза.</p>
 <details id="quality-sources"><summary>Откуда данные и насколько они свежие</summary>{table(['Источник','Что это','Обновление','Последняя проверка','Статус'],[[x['name'],x['kind'],x['cadence'],date(x['ts']),x['status']] for x in item['feeds']])}</details></div>
 <div class="card"><h2>Активное демо · {'включено' if item['active_demo_enabled'] else 'отключено'}</h2><p>{e(item['active_limits'])}</p><p class="small muted">Только после тех же проверок: 20+ train и test, положительный net, t≥3. Это эксперимент, улучшение результата не подтверждено.</p></div>'''

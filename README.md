@@ -49,6 +49,9 @@ The public site can be previewed with `python -m http.server 8080 --directory do
 
 ## Quality audit and controlled active demo
 
+Historical validation is cached for up to six hours with its original dataset, cutoff and metrics preserved. Live signals and realized-loss guards refresh separately; new prices never overwrite old validation evidence. This removes full historical replays from every minute of priority research. The dashboard now reports how many studies are insufficient, rejected or admitted, so idle trading is distinguishable from a stopped process. Cache/expiry and loss-guard regressions are covered; current suite: 238 tests.
+
+
 The dashboard's Laboratory now reports observed sample size, lesson coverage, actual new-profile and active-profile outcomes, data freshness and source failures. Predictive accuracy remains **unknown**; a small number of old-profile paper trades and fixed signal-confidence values cannot establish forecasting skill or profitable adaptation.
 
 A four-contract priority research queue refreshes every 60 seconds, separately from the all-contract history sweep. Completed coins must still pass current volume/listing filters. Failed refresh attempts never certify fresh exchange data, and future-dated study records cannot create candidates. Daily author-document checks remain static-source monitoring; Hyperliquid supplies public fills/positions, not private trader strategies. Historical news and combined-portfolio execution remain outside the OHLC replay.
