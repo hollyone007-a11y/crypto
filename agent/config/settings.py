@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     multiframe_enabled: bool = False
     multiframe_batch_size: int = 3
     active_demo_enabled: bool = False
+    experimental_demo_enabled: bool = False
     legacy_duration_enabled: bool = False
 
     @field_validator('multiframe_batch_size')

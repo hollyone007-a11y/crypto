@@ -50,6 +50,16 @@ class ExecutionEngine:
         if news['blockers']:
             return SubmitResult(False, news['blockers'])
         context = {**(context or {}), 'news': news}
+        if self.profile and self.profile.get('experimental_mode'):
+            from sqlalchemy import select,func
+            from db.models import Position
+            start=(self.broker.clock()//86_400_000)*86_400_000
+            opened=self.s.scalar(select(func.count()).select_from(Position).where(Position.status=='open'))
+            today=self.s.scalar(select(func.count()).select_from(Position).where(Position.opened_ts>=start))
+            if opened or today>=2:
+                reasons=['Учебное демо: максимум 1 открытая позиция и 2 входа за UTC-день по всему счёту.']
+                self.risk._event('reject',symbol,reasons=reasons)
+                return SubmitResult(False,reasons)
         if self.profile and self.profile.get('active_demo'):
             from sqlalchemy import select,func
             from db.models import Position

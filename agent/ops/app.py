@@ -101,6 +101,7 @@ class App:
                 leverage=self.settings.entry_leverage,max_hold_minutes=self.settings.max_hold_minutes,
                 stalled_exit_minutes=self.settings.stalled_exit_minutes)
             engine.profile['apply_holding_to_legacy']=self.settings.legacy_duration_enabled
+            engine.profile['experimental_mode']=self.settings.experimental_demo_enabled
             yield s, engine
 
     def _state(self, s, key, default=""):
@@ -130,6 +131,7 @@ class App:
                 stalled_exit_minutes=self.settings.stalled_exit_minutes,
                 validation_scope='baseline_only' if self.settings.entry_margin_pct else 'baseline',
                 active_demo_enabled=self.settings.active_demo_enabled,legacy_duration_enabled=self.settings.legacy_duration_enabled,
+                experimental_demo_enabled=self.settings.experimental_demo_enabled,
                 ts=self.now_ms()))
         with self.lock:
             self.feed.refresh()
@@ -462,13 +464,17 @@ class App:
         from strategies.public_methods import METHODS
         with self.Session() as s:
             candidates=pending_signals(s,self.now_ms())
+            if self.settings.experimental_demo_enabled:
+                from learning.exploration import pending
+                candidates+=pending(s,self.now_ms())
         if not candidates:
             from ops.quality import audit
             with self.Session() as s:
                 quality=audit(s,self.now_ms())
                 state=read_state(s,'mtf_decisions')
-                state.update(ts=self.now_ms(),status='waiting_validation',
-                    reason=f"Нет свежих допущенных сигналов: допуск {quality['qualified_studies']} из {quality['studies']}; недостаточная выборка {quality['insufficient_studies']}; тест не пройден {quality['rejected_studies']}.")
+                state.update(ts=self.now_ms(),status='waiting_experimental_signal' if self.settings.experimental_demo_enabled else 'waiting_validation',
+                    reason=('Учебное демо включено: ожидается свежий сетап 5м/15м с положительным test на малой выборке. Максимум 1 позиция и 2 входа за UTC-день.' if self.settings.experimental_demo_enabled else
+                        f"Нет свежих допущенных сигналов: допуск {quality['qualified_studies']} из {quality['studies']}; недостаточная выборка {quality['insufficient_studies']}; тест не пройден {quality['rejected_studies']}."))
                 store(s,'mtf_decisions',state)
             return {'status':state['status'],'reason':state['reason']}
         with self.lock:
@@ -485,6 +491,7 @@ class App:
                 active=candidate.get('policy')=='active'
                 if active and not self.settings.active_demo_enabled:continue
                 eng.profile={**base_profile,'active_demo':active,
+                    'experimental_entry':candidate.get('experimental',False),
                     'max_hold_minutes':45 if active else 60,'stalled_exit_minutes':20 if active else 30}
                 import hashlib
                 coid='mtf-'+hashlib.sha256(f"{candidate['symbol']}:{candidate['key']}:{candidate['signal_ts']}".encode()).hexdigest()[:40]
@@ -493,7 +500,7 @@ class App:
                 if not 0<=self.now_ms()-candidate['signal_ts']<=120_000: continue
                 source=METHODS[candidate['method']]
                 result=eng.submit(candidate['symbol'],Signal(**candidate['signal']),candidate['key'],
-                    thesis=source['name']+' · '+candidate['timeframe']+' · экспериментальная демосделка',
+                    thesis=source['name']+' · '+candidate['timeframe']+(' · учебная сделка, малая выборка' if candidate.get('experimental') else ' · экспериментальная демосделка'),
                     context=dict(mtf=candidate,source=source),client_order_id=coid)
                 events.append(dict(ts=self.now_ms(),symbol=candidate['symbol'],timeframe=candidate['timeframe'],policy=candidate.get('policy','balanced'),
                     method=candidate['method'],status='демовход' if result.ok else 'пропущен',

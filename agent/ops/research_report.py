@@ -19,6 +19,7 @@ def build(session):
     lines=['АУДИТ КАЧЕСТВА · PAPER',quality['accuracy_reason'],
            f"Закрыто {quality['closed_total']}; новый профиль {quality['new_profile_closed']}; разобрано {quality['reviewed']}; без разбора {quality['missing_reviews']}.",
            'Активное демо: '+quality['active_limits'],
+           f"Учебное демо: {'включено' if quality['experimental_demo_enabled'] else 'отключено'}; вариантов {quality['experimental_studies']}; положительный test на малой выборке, train может быть убыточным. Максимум 1 открытая позиция и 2 входа за UTC-день по всему демосчёту. Риск 0.5%, стоп обязателен. Прибыльность не подтверждена.",
            *quality['caveats'],'','ЛАБОРАТОРИЯ · MTF · PAPER',
            'Профиль: 10×; залог 10%; стоп-риск ≤0.5%; выход 30/60 мин.',
            f"Контрактов в каталоге: {len(catalog.get('contracts',[]))}; получили проверку: {len(records)}.",

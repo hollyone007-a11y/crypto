@@ -21,6 +21,8 @@ def audit(session,now):
     score_counts=Counter(score.get('status') for item in valid for score in item.get('scores',[]))
     priority=read_state(session,'priority_research')
     profile=read_state(session,'execution_profile')
+    from learning.exploration import eligible as can_explore
+    experiments=sum(can_explore(score) for item in valid for score in item.get('scores',[]))
     news=read_state(session,'news_status');sources=read_state(session,'strategy_sources')
     heartbeat=session.get(AgentState,'heartbeat')
     beats=int(heartbeat.value) if heartbeat else 0
@@ -45,6 +47,7 @@ def audit(session,now):
         insufficient_studies=score_counts.get('insufficient_sample',0),rejected_studies=score_counts.get('rejected',0),
         source_errors=sum(x.get('stage')=='error' for x in records),priority=priority,feeds=statuses,
         heartbeat_age_s=max(0,(now-beats)//1000),active_demo_enabled=profile.get('active_demo_enabled',False),
+        experimental_demo_enabled=profile.get('experimental_demo_enabled',False),experimental_studies=experiments,
         active_limits='5м/15м; цель ближе на 25%; выход 20/45 мин; риск ≤0.5%; 1 открытая активная позиция, 2 входа за UTC-день.',
         caveats=['5м OHLC — приближение, не тиковая точность.','Исторические новости и общий портфель не воспроизводятся.',
                  'Confidence в сигнале — фиксированная оценка правила, не откалиброванная вероятность прибыли.',
@@ -57,9 +60,10 @@ def panel(session,now):
     from ops.presentation import e,date
     from ops.mobile_dashboard import table
     item=audit(session,now)
-    return f'''<div class="card accent" id="quality-audit"><div class="row"><h2>Качество анализа</h2><span class="tag">Точность пока не установлена</span></div>
+    experiment=f'''<div class="card accent" id="experimental-demo"><h2>Учебное демо · {'включено' if item['experimental_demo_enabled'] else 'отключено'}</h2><p>Вариантов с положительным test на малой выборке: {item['experimental_studies']}. Это отдельный учебный допуск, не прохождение строгой проверки.</p><p>Нужна хотя бы 1 test-сделка и положительный net после расходов; train может быть убыточным. Только свежие сигналы 5м/15м. Стоп-риск ≤0,5%; максимум 1 открытая позиция и 2 входа за UTC-день по всему демосчёту. Выход 20/45 минут. После трёх последних учебных сделок с суммарным убытком пара/метод приостанавливается.</p><p class="small muted">Плечо 10×, залог 10%. Малая выборка может быть случайно удачной. Возможны убытки; прибыльность не подтверждена.</p></div>'''
+    return experiment+f'''<div class="card accent" id="quality-audit"><div class="row"><h2>Качество анализа</h2><span class="tag">Точность пока не установлена</span></div>
 <p>Закрытых сделок: <b>{item['closed_total']}</b> · нового профиля: <b>{item['new_profile_closed']}</b> · активных: <b>{item['active_closed']}</b> · разобрано: <b>{item['reviewed']}</b> · без разбора: <b>{item['missing_reviews']}</b>.</p>
 <p><b>Почему нет новых входов:</b> допуск получили {item['qualified_studies']} из {item['studies']} вариантов. Недостаточно сделок для проверки: {item['insufficient_studies']}; тест не пройден: {item['rejected_studies']}.</p>
 <p class="small muted">Свежий анализ сигналов: {item['evaluated_fresh']} из {item['evaluated_current_revision']}. История перепроверяется раз в 6 часов, её оценки хранятся отдельно от текущего сигнала. Ошибок источника в очереди: {item['source_errors']}. Процент прибыльных сделок на маленькой выборке не измеряет точность прогноза.</p>
 <details id="quality-sources"><summary>Откуда данные и насколько они свежие</summary>{table(['Источник','Что это','Обновление','Последняя проверка','Статус'],[[x['name'],x['kind'],x['cadence'],date(x['ts']),x['status']] for x in item['feeds']])}</details></div>
-<div class="card"><h2>Активное демо · {'включено' if item['active_demo_enabled'] else 'отключено'}</h2><p>{e(item['active_limits'])}</p><p class="small muted">Только после тех же проверок: 20+ train и test, положительный net, t≥3. Это эксперимент, улучшение результата не подтверждено.</p></div>'''
+<div class="card"><h2>Активное демо · {'включено' if item['active_demo_enabled'] else 'отключено'}</h2><p>{e(item['active_limits'])}</p><p class="small muted">Строгий допуск: 20+ train и test, положительный net, t≥3. Учебный допуск показан отдельно выше. Улучшение результата не подтверждено.</p></div>'''

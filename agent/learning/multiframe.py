@@ -142,7 +142,7 @@ def evaluate_symbol(session,row,now):
                         rationale=METHODS[method]['name']+' · '+tf+' · эксперимент после отложенной проверки')
                     score['signal_ts']=close_ts
             result['scores'].append(score)
-    return result
+    return add_exploration(session,result,base,hourly,now)
 
 
 def refresh_live_signals(session,previous,base,hourly,now,live_dataset_id):
@@ -154,6 +154,7 @@ def refresh_live_signals(session,previous,base,hourly,now,live_dataset_id):
     frames={'5m':base,'15m':resample(base,'15min',STEP),'1h':hourly,'4h':resample(hourly,'4h',3_600_000)}
     generated_cache={}
     for score in result.get('scores',[]):
+        score.pop('exploration_signal',None);score.pop('exploration_signal_ts',None)
         score.pop('signal',None);score.pop('signal_ts',None)
         closed=list(session.scalars(select(JournalEntry).where(JournalEntry.symbol==result['symbol'],
             JournalEntry.strategy==score['key'],JournalEntry.exit_ts.is_not(None)).order_by(JournalEntry.exit_ts.desc()).limit(20)))
@@ -172,6 +173,30 @@ def refresh_live_signals(session,previous,base,hourly,now,live_dataset_id):
             score['signal']=dict(side='long' if last.side>0 else 'short',entry=entry,stop=float(last['stop']),
                 take=take,confidence=.55,rationale=METHODS[method]['name']+' · '+tf+' · свежий сигнал после отдельной исторической проверки')
             score['signal_ts']=close_ts
+    return add_exploration(session,result,base,hourly,now)
+
+
+def add_exploration(session,result,base,hourly,now):
+    from learning.exploration import eligible,key
+    if not read_state(session,'execution_profile').get('experimental_demo_enabled'):return result
+    frames={'5m':base,'15m':resample(base,'15min',STEP)}
+    for score in result.get('scores',[]):
+        score.pop('exploration_signal',None);score.pop('exploration_signal_ts',None)
+        if not eligible(score):continue
+        closed=list(session.scalars(select(JournalEntry).where(JournalEntry.symbol==result['symbol'],
+            JournalEntry.strategy==key(score),JournalEntry.exit_ts.is_not(None)).order_by(JournalEntry.exit_ts.desc()).limit(3)))
+        score['exploration_closed']=len(closed)
+        score['exploration_paused']=len(closed)>=3 and sum(x.pnl or 0 for x in closed)<0
+        if score['exploration_paused']:continue
+        bars=frames[score['timeframe']]
+        if bars.empty:continue
+        last=signals(bars,score['method']).iloc[-1];close_ts=int(bars.ts.iloc[-1])+TIMEFRAMES[score['timeframe']]
+        if last.side and 0<=now-close_ts<=120_000:
+            entry=float(bars.close.iloc[-1])
+            score['exploration_signal']=dict(side='long' if last.side>0 else 'short',entry=entry,
+                stop=float(last['stop']),take=entry+(float(last['take'])-entry)*POLICIES['active']['target_multiplier'],
+                confidence=.5,rationale='Учебное демо: положительный test на малой выборке; train может быть убыточным, навык не подтверждён.')
+            score['exploration_signal_ts']=close_ts
     return result
 
 
@@ -252,13 +277,14 @@ def refresh_catalog(session,exchange,now):
     return state
 
 
-def priority_queue(catalog,records,cursor,now,limit):
+def priority_queue(catalog,records,cursor,now,limit,experimental=False):
     """Qualified contracts first, two liquid anchors, then a persistent rotation."""
     eligible=sorted([x for x in catalog if x.get('quote_volume',0)>=5_000_000
         and now-x.get('listed_ts',now)>=38*DAY],key=lambda x:(-x.get('quote_volume',0),x['symbol']))
+    from learning.exploration import eligible as can_explore
     qualified=[x for x in eligible if records.get(x['symbol'],{}).get('rules_revision')==RULES_REVISION
         and records[x['symbol']].get('stage')=='evaluated'
-        and any(v.get('status')=='paper_trial' for v in records[x['symbol']].get('scores',[]))]
+        and any(v.get('status')=='paper_trial' or (experimental and can_explore(v)) for v in records[x['symbol']].get('scores',[]))]
     qualified.sort(key=lambda x:(records[x['symbol']].get('checked_ts',0),x['symbol']))
     selected=qualified[:limit]
     # Leave discovery slots available unless qualified candidates fill the queue.
@@ -281,7 +307,8 @@ def refresh_priority(session,exchange,now,limit=8,budget_seconds=45):
         item=json.loads(row.value)
         records[row.key[4:]]=item
     previous=read_state(session,'priority_research');cursor=previous.get('rotation_cursor',0)
-    selected,rotated,rotation_size=priority_queue(catalog,records,cursor,now,limit)
+    selected,rotated,rotation_size=priority_queue(catalog,records,cursor,now,limit,
+        experimental=read_state(session,'execution_profile').get('experimental_demo_enabled',False))
     done=[];errors=[];observations=[];attempted=[];started=time.monotonic()
     for item in selected:
         attempted.append(item['symbol'])
