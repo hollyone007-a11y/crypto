@@ -105,7 +105,9 @@ def render(s,mode,equity,blockers,market_source='',quotes=None,limits=None):
     profile=read_state(s,'execution_profile');catalog=read_state(s,'market_catalog');scan=read_state(s,'mtf_scan');items=coverage(s)
     active={x['symbol'] for x in catalog.get('contracts',[])}
     if active: items={key:value for key,value in items.items() if key in active}
-    position_html=''.join(position_card(p,quotes.get(p.symbol),journals.get(p.id)) for p in positions) or '<div class="card empty"><strong>Открытых сделок нет</strong><p>Агент ждёт проверенный сигнал.</p></div>'
+    executor=read_state(s,'mtf_decisions')
+    execution_status=f'<div class="card" id="execution-status"><h2>Проверка входов</h2><p>{e(executor.get("reason","Ожидание первого цикла исполнения."))}</p><p class="small muted">Последняя проверка: {date(executor.get("ts",0))}. Отсутствие допущенного сигнала не означает остановку процесса.</p></div>'
+    position_html=execution_status+(''.join(position_card(p,quotes.get(p.symbol),journals.get(p.id)) for p in positions) or '<div class="card empty"><strong>Открытых сделок нет</strong><p>Агент ждёт проверенный сигнал.</p></div>')
     risks=list(s.scalars(select(RiskEvent).where(RiskEvent.kind!='approve').order_by(RiskEvent.ts.desc()).limit(15)))
     rules=limits or {}
     risk_details=table(['Правило','Значение'],[

@@ -57,6 +57,11 @@ def frozen_evaluator(session, symbols, cutoff_ts):
     symbols=tuple(symbols)
     snapshots={}
     def evaluate(version,start):
+        # Research may arrive with autoflushed metrics from a previous variant.
+        # Persist that boundary before loading frames or doing long CPU work;
+        # otherwise the research session holds SQLite's only writer throughout
+        # a replay and starves quote/account updates.
+        session.commit()
         if version.kind!='params':
             return {'error':'Automatic research supports bounded parameter variants only'}
         timeframe=build(version).timeframe
@@ -71,6 +76,7 @@ def frozen_evaluator(session, symbols, cutoff_ts):
                 digest.update(pd.util.hash_pandas_object(bars,index=True).values.tobytes())
                 digest.update(pd.util.hash_pandas_object(funding,index=True).values.tobytes())
             snapshots[timeframe]=(data,digest.hexdigest())
+        session.commit()
         data,dataset_id=snapshots[timeframe]
         result=evaluate_in_process(session,version,list(symbols),start,data_snapshot=data)
         result.update(dataset_id=dataset_id,cutoff_ts=cutoff_ts,

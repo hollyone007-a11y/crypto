@@ -462,7 +462,15 @@ class App:
         from strategies.public_methods import METHODS
         with self.Session() as s:
             candidates=pending_signals(s,self.now_ms())
-        if not candidates: return None
+        if not candidates:
+            from ops.quality import audit
+            with self.Session() as s:
+                quality=audit(s,self.now_ms())
+                state=read_state(s,'mtf_decisions')
+                state.update(ts=self.now_ms(),status='waiting_validation',
+                    reason=f"Нет свежих допущенных сигналов: допуск {quality['qualified_studies']} из {quality['studies']}; недостаточная выборка {quality['insufficient_studies']}; тест не пройден {quality['rejected_studies']}.")
+                store(s,'mtf_decisions',state)
+            return {'status':state['status'],'reason':state['reason']}
         with self.lock:
             with self.Session() as s:
                 base=[x['symbol'] for x in read_state(s,'universe').get('selected',[])] or self.settings.symbol_list
@@ -490,7 +498,7 @@ class App:
                 events.append(dict(ts=self.now_ms(),symbol=candidate['symbol'],timeframe=candidate['timeframe'],policy=candidate.get('policy','balanced'),
                     method=candidate['method'],status='демовход' if result.ok else 'пропущен',
                     reason='Испытание на будущих данных; доходность не подтверждена.' if result.ok else '; '.join(result.reasons)))
-            store(s,'mtf_decisions',dict(ts=self.now_ms(),seen=sorted(seen)[-2000:],events=events[-100:]))
+            store(s,'mtf_decisions',dict(ts=self.now_ms(),status='processed',reason='Свежие сигналы обработаны через риск-контроль.',seen=sorted(seen)[-2000:],events=events[-100:]))
 
     def bootstrap_market(self):
         try:
