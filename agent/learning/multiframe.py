@@ -57,6 +57,15 @@ def refresh_history(session,exchange,symbol,now):
             Ohlcv.symbol==symbol,Ohlcv.timeframe==tf))
         if first and first>now-HISTORY_DAYS*DAY+step:
             ingest_page(session,exchange,symbol,tf,max(now-HISTORY_DAYS*DAY,first-1000*step),now)
+        else:
+            # A sleep/network outage can leave an interior hole. Extending only
+            # the oldest/latest edge never repairs it, so validation stays stuck.
+            timestamps=select(Ohlcv.ts.label('ts'),func.lag(Ohlcv.ts).over(order_by=Ohlcv.ts).label('prior')).where(
+                Ohlcv.exchange=='binanceusdm',Ohlcv.symbol==symbol,Ohlcv.timeframe==tf,
+                Ohlcv.ts>=now-HISTORY_DAYS*DAY).subquery()
+            missing=session.scalar(select(func.min(timestamps.c.prior+step)).where(timestamps.c.ts>timestamps.c.prior+step))
+            if missing is not None:
+                ingest_page(session,exchange,symbol,tf,int(missing),now)
     key='funding_coverage:'+symbol
     coverage=read_state(session,key)
     since=coverage.get('cursor',now-HISTORY_DAYS*DAY)
@@ -178,15 +187,7 @@ def provenance(base,funding):
 def run_batch(session,exchange,now,batch_size=3,budget_seconds=40):
     session.execute(delete(Ohlcv).where(Ohlcv.exchange=='binanceusdm',Ohlcv.timeframe=='5m',Ohlcv.ts<now-45*DAY))
     session.commit()
-    catalog_state=read_state(session,'market_catalog')
-    if now-catalog_state.get('ts',0)>=60_000:
-        from data.universe import select_universe
-        markets=exchange.load_markets()
-        tickers=exchange.fetch_tickers()
-        catalog=select_universe(markets,tickers,now,size=None,min_volume=0,min_listing_days=0)
-        if catalog:
-            catalog_state=dict(ts=now,contracts=catalog,scope='Binance crypto USDT perpetual')
-            store(session,'market_catalog',catalog_state)
+    catalog_state=refresh_catalog(session,exchange,now)
     catalog=catalog_state.get('contracts',[])
     state=read_state(session,'mtf_scan');cursor=state.get('cursor',0)%max(1,len(catalog))
     started=time.monotonic();done=0
@@ -226,19 +227,64 @@ def pending_signals(session,now):
     return sorted(found,key=lambda x:(-x['test']['expectancy_r'],x['symbol'],x['key']))[:3]
 
 
-def refresh_priority(session,exchange,now,limit=4):
-    """Frequent small live queue, independent of the slow all-contract history sweep."""
-    catalog=read_state(session,'market_catalog').get('contracts',[])
-    by_symbol={x['symbol']:x for x in catalog}
-    eligible=[x for x in catalog if x.get('quote_volume',0)>=50_000_000 and now-x.get('listed_ts',now)>=38*DAY]
-    eligible_symbols={x['symbol'] for x in eligible}
-    complete=[]
+def refresh_catalog(session,exchange,now):
+    """Refresh tickers each minute and exchange metadata every ten minutes."""
+    previous=read_state(session,'market_catalog')
+    if 0<=now-previous.get('ts',0)<60_000:
+        return previous
+    from data.universe import select_universe
+    reload=not previous.get('metadata_checked_ts') or now-previous['metadata_checked_ts']>=600_000
+    markets=exchange.load_markets(reload=reload)
+    catalog=select_universe(markets,exchange.fetch_tickers(),now,size=None,min_volume=0,min_listing_days=0)
+    if not catalog:
+        raise RuntimeError('Empty active contract catalog; previous catalog retained')
+    before={x['symbol'] for x in previous.get('contracts',[])}
+    added=[x['symbol'] for x in catalog if before and x['symbol'] not in before]
+    state=dict(ts=now,contracts=catalog,scope='Binance crypto USDT perpetual',
+        metadata_checked_ts=now if reload else previous['metadata_checked_ts'])
+    store(session,'market_catalog',state)
+    old=read_state(session,'market_discovery')
+    recent=[x for x in catalog if 0<=now-x.get('listed_ts',0)<38*DAY]
+    store(session,'market_discovery',dict(ts=now,metadata_checked_ts=state['metadata_checked_ts'],
+        added=added,last_added=added or old.get('last_added',[]),
+        last_added_ts=now if added else old.get('last_added_ts',0),young_contracts=recent,
+        reason='Молодые контракты наблюдаются сразу; для текущего MTF-теста нужны 38 дней истории.'))
+    return state
+
+
+def priority_queue(catalog,records,cursor,now,limit):
+    """Qualified contracts first, two liquid anchors, then a persistent rotation."""
+    eligible=sorted([x for x in catalog if x.get('quote_volume',0)>=5_000_000
+        and now-x.get('listed_ts',now)>=38*DAY],key=lambda x:(-x.get('quote_volume',0),x['symbol']))
+    qualified=[x for x in eligible if records.get(x['symbol'],{}).get('rules_revision')==RULES_REVISION
+        and records[x['symbol']].get('stage')=='evaluated'
+        and any(v.get('status')=='paper_trial' for v in records[x['symbol']].get('scores',[]))]
+    qualified.sort(key=lambda x:(records[x['symbol']].get('checked_ts',0),x['symbol']))
+    selected=qualified[:limit]
+    # Leave discovery slots available unless qualified candidates fill the queue.
+    for row in eligible[:min(2,max(0,limit-2))]:
+        if len(selected)<limit and row not in selected: selected.append(row)
+    used={x['symbol'] for x in selected}
+    rotation=sorted([x for x in eligible if x['symbol'] not in used],key=lambda x:x['symbol'])
+    rotated=[]
+    for offset in range(min(max(0,limit-len(selected)),len(rotation))):
+        row=rotation[(cursor+offset)%len(rotation)]
+        selected.append(row);rotated.append(row['symbol'])
+    return selected,rotated,len(rotation)
+
+
+def refresh_priority(session,exchange,now,limit=8,budget_seconds=45):
+    """Continuously discover contracts instead of polling the same four forever."""
+    catalog=refresh_catalog(session,exchange,now).get('contracts',[])
+    records={}
     for row in session.scalars(select(AgentState).where(AgentState.key.like('mtf:%'))):
         item=json.loads(row.value)
-        if item.get('stage')=='evaluated' and item.get('symbol') in eligible_symbols: complete.append(by_symbol[item['symbol']])
-    selected=list({x['symbol']:x for x in sorted(complete,key=lambda x:-x.get('quote_volume',0))+eligible}.values())[:limit]
-    done=[];errors=[];observations=[]
+        records[row.key[4:]]=item
+    previous=read_state(session,'priority_research');cursor=previous.get('rotation_cursor',0)
+    selected,rotated,rotation_size=priority_queue(catalog,records,cursor,now,limit)
+    done=[];errors=[];observations=[];attempted=[];started=time.monotonic()
     for item in selected:
+        attempted.append(item['symbol'])
         try:
             refresh_history(session,exchange,item['symbol'],now)
             record=evaluate_symbol(session,item,now)
@@ -246,8 +292,12 @@ def refresh_priority(session,exchange,now,limit=4):
             if not 0<=now-record.get('latest_5m',0)<=2*STEP: raise ValueError('stale_candles')
             done.append(item['symbol']);observations.append(dict(symbol=item['symbol'],latest_closed_ts=record['latest_5m']))
         except Exception as exc: errors.append(dict(symbol=item['symbol'],error=type(exc).__name__))
-    previous=read_state(session,'priority_research')
-    result=dict(ts=now,symbols=done,errors=errors,successful_observations=observations,interval_seconds=60,
+        if time.monotonic()-started>=budget_seconds: break
+    visited=[x for x in previous.get('visited_symbols',[]) if any(c['symbol']==x for c in catalog)]
+    result=dict(ts=now,symbols=done,attempted_symbols=attempted,errors=errors,successful_observations=observations,interval_seconds=60,
+                rotation_cursor=(cursor+sum(x in rotated for x in attempted))%max(1,rotation_size),
+                rotation_pool=rotation_size,visited_symbols=list(dict.fromkeys(visited+done)),
+                batch_limit=limit,selection='qualified_then_liquid_anchors_then_rotation',
                 last_success_ts=now if done else previous.get('last_success_ts',0))
     store(session,'priority_research',result)
     return result

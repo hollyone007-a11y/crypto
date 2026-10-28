@@ -27,7 +27,7 @@ def audit(session,now):
     observations=priority.get('successful_observations',[])
     healthy=bool(observations) and 0<=now-priority.get('ts',0)<=180_000 and all(0<=now-x.get('latest_closed_ts',0)<=900_000 for x in observations)
     connection=('частично: есть ошибки опроса' if priority.get('errors') else 'на связи') if healthy else ('опрос завершился без свежих данных' if priority.get('errors') else 'приоритетная проверка устарела')
-    statuses=[dict(name='Binance Futures',kind='Котировки/свечи/фандинг',cadence='котировки 5с; 4 приоритетные монеты — 60с; остальная история — очередь',
+    statuses=[dict(name='Binance Futures',kind='Котировки/свечи/фандинг',cadence='котировки 5с; до 8 монет за 60с: допущенные, ликвидные и ротация; остальная история — очередь',
         ts=priority.get('last_success_ts',0),status=connection)]
     statuses.append(dict(name='CoinDesk · Cointelegraph · CNBC',kind='RSS-новости',cadence='5 минут',ts=news.get('ts',0),
         status='источников: '+str(len(news.get('successful_sources',[]))) if 0<=now-news.get('ts',0)<=900_000 else 'нет свежего опроса'))

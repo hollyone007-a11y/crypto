@@ -84,7 +84,7 @@ def test_active_replay_enforces_two_daily_entries():
 def test_priority_drops_completed_coin_that_is_no_longer_liquid(session,monkeypatch):
     from learning import multiframe
     now=100*86400000
-    store(session,'market_catalog',dict(contracts=[dict(symbol='AAAUSDT',quote_volume=100_000_000,listed_ts=1),dict(symbol='BBBUSDT',quote_volume=1_000_000,listed_ts=1)]))
+    store(session,'market_catalog',dict(ts=now,contracts=[dict(symbol='AAAUSDT',quote_volume=100_000_000,listed_ts=1),dict(symbol='BBBUSDT',quote_volume=1_000_000,listed_ts=1)]))
     store(session,'mtf:BBBUSDT',dict(symbol='BBBUSDT',stage='evaluated'))
     called=[]
     monkeypatch.setattr(multiframe,'refresh_history',lambda s,e,symbol,t:called.append(symbol))
