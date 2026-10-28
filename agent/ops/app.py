@@ -489,7 +489,8 @@ class App:
             base_profile=dict(eng.profile)
             for candidate in candidates:
                 active=candidate.get('policy')=='active'
-                if active and not self.settings.active_demo_enabled:continue
+                if active and not (self.settings.active_demo_enabled or
+                    (candidate.get('experimental') and self.settings.experimental_demo_enabled)):continue
                 eng.profile={**base_profile,'active_demo':active,
                     'experimental_entry':candidate.get('experimental',False),
                     'max_hold_minutes':45 if active else 60,'stalled_exit_minutes':20 if active else 30}

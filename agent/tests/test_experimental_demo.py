@@ -93,7 +93,7 @@ def test_experimental_mode_does_not_bypass_stop_risk(env):
 
 def test_real_app_experimental_candidate_opens_and_is_labeled(app,monkeypatch):
     from learning import exploration
-    for name,value in dict(multiframe_enabled=True,active_demo_enabled=True,experimental_demo_enabled=True,entry_margin_pct=10,entry_leverage=10,max_hold_minutes=60,stalled_exit_minutes=30).items():
+    for name,value in dict(multiframe_enabled=True,active_demo_enabled=False,experimental_demo_enabled=True,entry_margin_pct=10,entry_leverage=10,max_hold_minutes=60,stalled_exit_minutes=30).items():
         object.__setattr__(app.settings,name,value)
     app.limits=replace(app.limits,max_leverage=10,max_risk_per_trade_pct=.5)
     candidate=dict(symbol='BTCUSDT',method='bb_cont',timeframe='5m',policy='active',key='mtf_exp_bb_cont_5m_active',signal_ts=app.now_ms(),dataset_id='test',experimental=True,signal=score()['exploration_signal'])
