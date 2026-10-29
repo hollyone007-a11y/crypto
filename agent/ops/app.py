@@ -467,11 +467,18 @@ class App:
         from analyst.news_risk import read_state
         from strategies.base import Signal
         from strategies.public_methods import METHODS
+        import hashlib
+        def identity(candidate):
+            return 'mtf-'+hashlib.sha256(f"{candidate['symbol']}:{candidate['key']}:{candidate['signal_ts']}".encode()).hexdigest()[:40]
         with self.Session() as s:
             candidates=pending_signals(s,self.now_ms())
             if self.settings.experimental_demo_enabled:
                 from learning.exploration import pending
                 candidates+=pending(s,self.now_ms())
+            processed=set(read_state(s,'mtf_decisions').get('seen',[]))
+            # Filter processed IDs BEFORE taking a bounded execution batch.
+            # Otherwise the same top three permanently hide later candidates.
+            candidates=[x for x in candidates if identity(x) not in processed][:3]
         if not candidates:
             from ops.quality import audit
             with self.Session() as s:
@@ -499,8 +506,7 @@ class App:
                 eng.profile={**base_profile,'active_demo':active,
                     'experimental_entry':candidate.get('experimental',False),
                     'max_hold_minutes':45 if active else 60,'stalled_exit_minutes':20 if active else 30}
-                import hashlib
-                coid='mtf-'+hashlib.sha256(f"{candidate['symbol']}:{candidate['key']}:{candidate['signal_ts']}".encode()).hexdigest()[:40]
+                coid=identity(candidate)
                 if coid in seen: continue
                 seen.add(coid)
                 if not 0<=self.now_ms()-candidate['signal_ts']<=120_000: continue

@@ -108,3 +108,27 @@ def test_ui_separates_observations_and_demo_trades(app):
     assert 'id="signal-learning"' in html and 'не сделки демосчёта' in html
     scheduler=__import__('ops.run',fromlist=['build_scheduler']).build_scheduler(app)
     assert scheduler.get_job('signal_learning').executor=='observations'
+
+
+def test_execution_batch_does_not_starve_fourth_signal(app,monkeypatch):
+    from contextlib import contextmanager
+    from learning import multiframe
+    from execution.engine import SubmitResult
+    from dataclasses import replace
+    for name,value in dict(multiframe_enabled=True,entry_margin_pct=10,entry_leverage=10,max_hold_minutes=60,stalled_exit_minutes=30).items():
+        object.__setattr__(app.settings,name,value)
+    app.limits=replace(app.limits,max_risk_per_trade_pct=.5)
+    candidates=[dict(symbol='BTCUSDT',method='bb_cont',timeframe='5m',policy='balanced',key='case'+str(i),
+        signal_ts=app.now_ms(),signal=dict(side='long',entry=100.05,stop=99.9,take=101,confidence=.5,rationale='test')) for i in range(4)]
+    monkeypatch.setattr(multiframe,'pending_signals',lambda *_:candidates)
+    seen=[];original=app.trading
+    @contextmanager
+    def trading():
+        with original() as (session,engine):
+            def submit(symbol,signal,strategy,**kwargs):
+                seen.append(strategy);return SubmitResult(False,['test rejection'])
+            engine.submit=submit
+            yield session,engine
+    monkeypatch.setattr(app,'trading',trading)
+    app.multiframe_execute();assert seen==['case0','case1','case2']
+    app.multiframe_execute();assert seen==['case0','case1','case2','case3']

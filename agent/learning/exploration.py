@@ -34,4 +34,4 @@ def pending(session,now):
                 found.append({**score,'symbol':item['symbol'],'dataset_id':item['dataset_id'],
                     'key':key(score),'signal':signal,'signal_ts':score['exploration_signal_ts'],'experimental':True})
     # Coverage first; a tiny lucky backtest is not treated as the best trader.
-    return sorted(found,key=lambda x:(x.get('exploration_closed',0),x['signal_ts'],x['symbol'],x['key']))[:3]
+    return sorted(found,key=lambda x:(x.get('exploration_closed',0),x['signal_ts'],x['symbol'],x['key']))

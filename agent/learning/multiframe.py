@@ -253,7 +253,7 @@ def pending_signals(session,now):
         for score in item.get('scores',[]):
             if score['status']=='paper_trial' and score.get('signal') and 0<=now-score['signal_ts']<=120_000:
                 found.append(dict(symbol=item['symbol'],dataset_id=item['dataset_id'],**score))
-    return sorted(found,key=lambda x:(-x['test']['expectancy_r'],x['symbol'],x['key']))[:3]
+    return sorted(found,key=lambda x:(-x['test']['expectancy_r'],x['symbol'],x['key']))
 
 
 def refresh_catalog(session,exchange,now):
