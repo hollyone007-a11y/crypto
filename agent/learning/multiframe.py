@@ -82,6 +82,8 @@ def evaluate_symbol(session,row,now):
     symbol=row['symbol'];cutoff=(now//STEP)*STEP
     base=load_bars(session,symbol,'5m',cutoff)
     hourly=resample(base,'1h',STEP) if not base.empty else base.copy()
+    from learning.observatory import capture
+    capture(session,symbol,base,now)
     result=dict(symbol=symbol,checked_ts=now,cutoff_ts=cutoff,stage='history',scores=[],
                 latest_5m=int(base.ts.max()) if len(base) else 0,base_bars=len(base),reason='Собирается общая история 5м; старшие ТФ строятся из неё.',model=MODEL,rules_revision=RULES_REVISION)
     # Identical scored dates across every strategy and timeframe. Ten days precede training for warm-up.

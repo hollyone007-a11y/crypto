@@ -48,6 +48,7 @@ def build_scheduler(app: App) -> BlockingScheduler:
                                         "context": ThreadPoolExecutor(1),
                                         "scanner": ThreadPoolExecutor(1),
                                         "priority": ThreadPoolExecutor(1),
+                                        "observations": ThreadPoolExecutor(1),
                                         "sources": ThreadPoolExecutor(1),
                                         "publish": ThreadPoolExecutor(1)}, timezone="UTC",
                               job_defaults={"coalesce": True, "max_instances": 1,
@@ -68,6 +69,7 @@ def build_scheduler(app: App) -> BlockingScheduler:
         next_run_time=datetime.now(UTC))
     add(app.multiframe_execute, 'interval', seconds=15, id='multiframe_execute')
     add(app.priority_research,'interval',seconds=60,id='priority_research',executor='priority',next_run_time=datetime.now(UTC))
+    add(app.signal_learning_cycle,'interval',seconds=15,id='signal_learning',executor='observations',next_run_time=datetime.now(UTC))
     add(app.review_strategy_sources,'interval',hours=24,id='strategy_sources',executor='sources',
         next_run_time=datetime.now(UTC))
     add(app.collect_news, "cron", hour="*/6", minute=20, id="news_full",

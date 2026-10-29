@@ -452,6 +452,11 @@ class App:
         from learning.multiframe import refresh_priority
         with self.Session() as s:return refresh_priority(s,self.priority_exchange,self.now_ms())
 
+    def signal_learning_cycle(self):
+        if not self.settings.multiframe_enabled:return None
+        from learning.observatory import cycle
+        with self.Session() as s:return cycle(s,self.now_ms())
+
     def multiframe_execute(self):
         if not self.settings.multiframe_enabled: return None
         if (self.settings.entry_margin_pct,self.settings.entry_leverage,self.settings.max_hold_minutes,

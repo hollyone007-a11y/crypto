@@ -114,3 +114,10 @@ A fourth predeclared hypothesis, independent Supertrend(ATR10, multiplier3) plus
 MTF execution rejects quote movement beyond the smaller of 0.15% of signal price and one quarter of the original stop distance, in either direction. Experimental symbol/strategy pairs wait 24 hours after a loss; the existing three-outcome net-loss pause also remains. Submit rechecks the journal, so cached signals cannot bypass the cooldown. New guard rules have not established profitability and are not included in prior historical results. Stop-gap fills can exceed the planned risk estimate.
 
 Combined train and test net must remain positive for exploratory admission; a tiny positive test cannot rescue an overall negative historical pair. This guard does not establish statistical significance.
+
+
+## Durable signal research pipeline
+
+The observatory records every detected predeclared-method signal in available closed candles independently of execution qualification. Initial replay is bounded to the previous 24 hours. Unique observation IDs prevent double counting and preserve the original prediction. Late observations are labelled retrospective; prospective decisions are persisted before their planned next-5m-bar entry. Conservative OHLC outcomes include fees, spread, slippage and covered funding. Missing price/funding data never becomes fabricated profit.
+
+A separate 15-second worker resolves pending observations and updates per-method/timeframe/exit empirical net-R estimates from completed forward observations only. Forecasts are frozen before later outcomes, and forecast error is scored afterward. Retrospective outcomes, future observations, and actual paper account orders remain distinct. These unit-notional observations do not change account cash, order limits, risk settings or strategy admission. Cohort statistics retain the latest 10,000 closed observations per current model revision and are descriptive, not evidence of a profitable autonomous model.

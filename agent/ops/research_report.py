@@ -16,6 +16,7 @@ def build(session):
     from ops.quality import audit
     import time
     quality=audit(session,int(time.time()*1000))
+    signal_learning=read_state(session,'signal_learning')
     lines=['АУДИТ КАЧЕСТВА · PAPER',quality['accuracy_reason'],
            f"Закрыто {quality['closed_total']}; новый профиль {quality['new_profile_closed']}; разобрано {quality['reviewed']}; без разбора {quality['missing_reviews']}.",
            'Активное демо: '+quality['active_limits'],
@@ -29,7 +30,11 @@ def build(session):
            'Допуск только к экспериментальному демо, не к production. Прибыльность не подтверждена.','']
     for key,method in METHODS.items():
         lines += [method['name']+' · '+method['author'],method['url'],method['rules'],method['scope'],'']
-    lines+=['TRADINGVIEW: только просмотр графиков; автоматический импорт/торговые webhooks не подключены.',
+    lines+=['ПОТОК СИГНАЛОВ: контрольные наблюдения, не сделки счёта.',
+            'Состояния: '+json.dumps(signal_learning.get('counts',{}),ensure_ascii=False),
+            'Завершённые будущие/исторические: '+json.dumps(signal_learning.get('closed_modes',{}),ensure_ascii=False),
+            signal_learning.get('next_step','Первый цикл ожидается.'),
+            'TRADINGVIEW: только просмотр графиков; автоматический импорт/торговые webhooks не подключены.',
             'https://www.tradingview.com/policies/',
             'Наблюдения Hyperliquid: исполнения, не полные сделки; стратегия трейдера неизвестна; reported closedPnL не равен чистой прибыли счёта.']
     for row in session.scalars(select(AgentState).where(AgentState.key.like('trader_observations:%')).limit(6)):
