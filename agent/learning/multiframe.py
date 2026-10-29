@@ -186,7 +186,9 @@ def add_exploration(session,result,base,hourly,now):
         closed=list(session.scalars(select(JournalEntry).where(JournalEntry.symbol==result['symbol'],
             JournalEntry.strategy==key(score),JournalEntry.exit_ts.is_not(None)).order_by(JournalEntry.exit_ts.desc()).limit(3)))
         score['exploration_closed']=len(closed)
-        score['exploration_paused']=len(closed)>=3 and sum(x.pnl or 0 for x in closed)<0
+        recent_loss=bool(closed) and (closed[0].pnl or 0)<0 and 0<=now-closed[0].exit_ts<DAY
+        score['exploration_paused']=recent_loss or (len(closed)>=3 and sum(x.pnl or 0 for x in closed)<0)
+        score['exploration_pause_reason']='24 часа после убытка' if recent_loss else 'Отрицательный итог трёх последних сделок' if score['exploration_paused'] else ''
         if score['exploration_paused']:continue
         bars=frames[score['timeframe']]
         if bars.empty:continue

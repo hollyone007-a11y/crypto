@@ -93,7 +93,7 @@ def test_fresh_qualified_signal_opens_once_and_reaches_journal(app,monkeypatch):
         object.__setattr__(app.settings,key,value)
     app.limits=replace(app.limits,max_leverage=10,max_risk_per_trade_pct=.5)
     candidate=dict(symbol='BTCUSDT',method='st_flip',timeframe='5m',policy='balanced',key='mtf_st_flip_5m',signal_ts=app.now_ms(),dataset_id='test-only',test={'expectancy_r':.5},
-        signal=dict(side='long',entry=100,stop=99.9,take=101,confidence=.55,rationale='synthetic qualified signal'))
+        signal=dict(side='long',entry=100.05,stop=99.9,take=101,confidence=.55,rationale='synthetic qualified signal'))
     monkeypatch.setattr(multiframe,'pending_signals',lambda *_:[candidate])
     app.multiframe_execute();app.multiframe_execute()
     with app.Session() as s:

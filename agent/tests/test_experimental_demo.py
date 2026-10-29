@@ -97,6 +97,7 @@ def test_real_app_experimental_candidate_opens_and_is_labeled(app,monkeypatch):
         object.__setattr__(app.settings,name,value)
     app.limits=replace(app.limits,max_leverage=10,max_risk_per_trade_pct=.5)
     candidate=dict(symbol='BTCUSDT',method='bb_cont',timeframe='5m',policy='active',key='mtf_exp_bb_cont_5m_active',signal_ts=app.now_ms(),dataset_id='test',experimental=True,signal=score()['exploration_signal'])
+    candidate['signal']['entry']=100.05  # current ask in FakeEx; no entry drift
     monkeypatch.setattr(exploration,'pending',lambda *a:[candidate])
     app.multiframe_execute()
     with app.Session() as s:

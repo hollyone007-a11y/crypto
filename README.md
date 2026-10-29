@@ -107,3 +107,8 @@ A fourth predeclared hypothesis, independent Supertrend(ATR10, multiplier3) plus
 ## Opt-in experimental paper research
 
 `EXPERIMENTAL_DEMO_ENABLED=true` enables separately labelled forward paper entries from active 5m/15m variants with at least one positive-net test trade. Training can be negative; these variants do not pass strict validation. The existing historical metrics are preserved. Only fresh signals are executable, with mandatory stops and the existing 0.5% risk check, 10% margin and 10x leverage. The entire paper account is capped at one open position and two entries per UTC day while this mode is enabled. Three latest losing-in-total exploratory outcomes pause that symbol/method. This is small-sample research, not evidence of profitability. Defaults remain disabled; no live execution adapter is provided.
+
+
+## Entry quality and loss cooldown
+
+MTF execution rejects quote movement beyond the smaller of 0.15% of signal price and one quarter of the original stop distance, in either direction. Experimental symbol/strategy pairs wait 24 hours after a loss; the existing three-outcome net-loss pause also remains. Submit rechecks the journal, so cached signals cannot bypass the cooldown. New guard rules have not established profitability and are not included in prior historical results. Stop-gap fills can exceed the planned risk estimate.

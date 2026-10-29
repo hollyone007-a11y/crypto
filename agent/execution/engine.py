@@ -73,6 +73,27 @@ class ExecutionEngine:
                 return SubmitResult(False,reasons)
         bid, ask = self.broker.quotes(symbol)
         ref = ask if signal.side == "long" else bid
+        if (context or {}).get('mtf'):
+            import math
+            source=float(signal.entry)
+            permitted=min(abs(source)*.0015,abs(source-signal.stop)*.25)
+            drift=abs(ref-source)
+            if not math.isfinite(source) or source<=0 or not math.isfinite(permitted) or permitted<=0 or drift>permitted:
+                reasons=['Цена ушла от MTF-сигнала: вход отменён (предел — 0,15% цены или четверть исходного расстояния до стопа).']
+                self.risk._event('reject',symbol,reasons=reasons,signal_entry=source,quoted_entry=ref)
+                return SubmitResult(False,reasons)
+            context={**context,'entry_quality':dict(signal_entry=source,quoted_entry=ref,
+                drift_pct=drift/source*100,max_drift_pct=permitted/source*100,revision='entry-drift-v1')}
+        if self.profile and self.profile.get('experimental_entry'):
+            from sqlalchemy import select
+            from db.models import JournalEntry
+            last=list(self.s.scalars(select(JournalEntry).where(JournalEntry.symbol==symbol,
+                JournalEntry.strategy==strategy,JournalEntry.exit_ts.is_not(None))
+                .order_by(JournalEntry.exit_ts.desc()).limit(3)))
+            if (last and (last[0].pnl or 0)<0 and 0<=self.broker.clock()-last[0].exit_ts<86_400_000) or (len(last)>=3 and sum(x.pnl or 0 for x in last)<0):
+                reasons=['Учебная пара/стратегия на паузе: 24 часа после убытка либо отрицательный итог трёх последних сделок.']
+                self.risk._event('reject',symbol,reasons=reasons)
+                return SubmitResult(False,reasons)
         if self.profile and self.profile.get('margin_pct',0):
             profile = self.profile
             equity = self.broker.equity()
