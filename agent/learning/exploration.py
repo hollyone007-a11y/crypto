@@ -4,11 +4,11 @@ import math
 
 def eligible(score):
     test=score.get('test',{})
-    values=[test.get('net_usdt',0),test.get('expectancy_r',0),test.get('max_dd_pct',-100)]
+    values=[test.get('net_usdt',0),test.get('expectancy_r',0),test.get('max_dd_pct',-100),score.get('train',{}).get('net_usdt')]
     return (score.get('policy')=='active' and score.get('timeframe') in ('5m','15m')
         and score.get('status')=='insufficient_sample' and test.get('trades',0)>=1
         and all(isinstance(x,(int,float)) and math.isfinite(x) for x in values)
-        and values[0]>0 and values[1]>0 and values[2]>-10)
+        and values[0]>0 and values[1]>0 and values[2]>-10 and values[0]+values[3]>0)
 
 
 def key(score):

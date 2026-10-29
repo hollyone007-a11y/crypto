@@ -16,7 +16,7 @@ NOW=100*86400000
 
 def score():
     return dict(key='mtf_bb_cont_5m_active',method='bb_cont',timeframe='5m',policy='active',status='insufficient_sample',
-        train=dict(trades=4,net_usdt=-20),test=dict(trades=2,net_usdt=10,expectancy_r=.2,max_dd_pct=-1),
+        train=dict(trades=4,net_usdt=-5),test=dict(trades=2,net_usdt=10,expectancy_r=.2,max_dd_pct=-1),
         exploration_signal=dict(side='long',entry=100,stop=99.9,take=101,confidence=.5,rationale='test'),exploration_signal_ts=NOW)
 
 
@@ -24,6 +24,13 @@ def test_research_eligibility_is_not_strict_validation():
     good=score();assert eligible(good) and good['status']=='insufficient_sample'
     for change in [dict(policy='balanced'),dict(timeframe='4h'),dict(status='rejected'),dict(test=dict(trades=0,net_usdt=10)),dict(test=dict(trades=1,net_usdt=-1,expectancy_r=.1,max_dd_pct=-1))]:
         assert not eligible({**good,**change})
+
+
+def test_two_lucky_trades_cannot_rescue_negative_combined_history():
+    observed=score();observed['train']['net_usdt']=-150.7684;observed['test']['net_usdt']=14.4828
+    assert not eligible(observed)
+    observed['train'].pop('net_usdt')
+    assert not eligible(observed)
 
 
 def test_opt_in_freshness_and_strict_queue_separation(session):

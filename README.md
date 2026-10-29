@@ -112,3 +112,5 @@ A fourth predeclared hypothesis, independent Supertrend(ATR10, multiplier3) plus
 ## Entry quality and loss cooldown
 
 MTF execution rejects quote movement beyond the smaller of 0.15% of signal price and one quarter of the original stop distance, in either direction. Experimental symbol/strategy pairs wait 24 hours after a loss; the existing three-outcome net-loss pause also remains. Submit rechecks the journal, so cached signals cannot bypass the cooldown. New guard rules have not established profitability and are not included in prior historical results. Stop-gap fills can exceed the planned risk estimate.
+
+Combined train and test net must remain positive for exploratory admission; a tiny positive test cannot rescue an overall negative historical pair. This guard does not establish statistical significance.
